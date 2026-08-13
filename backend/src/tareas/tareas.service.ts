@@ -162,17 +162,23 @@ export class TareasService {
       await this.validarDependencia(tarea.proyectoId, dto.dependenciaId, id);
     }
 
-    Object.assign(tarea, {
-      nombre: dto.nombre ?? tarea.nombre,
-      fechaInicio: dto.fechaInicio ?? tarea.fechaInicio,
-      fechaFin: dto.fechaFin ?? tarea.fechaFin,
-      presupuesto: dto.presupuesto !== undefined ? String(dto.presupuesto) : tarea.presupuesto,
-      estatus: dto.estatus ?? tarea.estatus,
-      porcentajeAvance: dto.porcentajeAvance ?? tarea.porcentajeAvance,
-      responsableId: dto.responsableId ?? tarea.responsableId,
-      dependenciaId: dto.dependenciaId ?? tarea.dependenciaId,
-    });
-    await this.tareas.save(tarea);
+    // IMPORTANTE: UPDATE dirigido, no tarea.save() — `tarea` se cargó con
+    // las relaciones responsable/dependencia ya resueltas; si se reasigna
+    // solo la columna escalar y se guarda la entidad completa, TypeORM
+    // puede preferir el objeto de relación viejo que sigue en memoria y el
+    // cambio se pierde en silencio (mismo caso que ProyectosService).
+    const cambios: Record<string, unknown> = {};
+    if (dto.nombre !== undefined) cambios.nombre = dto.nombre;
+    if (dto.fechaInicio !== undefined) cambios.fechaInicio = dto.fechaInicio;
+    if (dto.fechaFin !== undefined) cambios.fechaFin = dto.fechaFin;
+    if (dto.presupuesto !== undefined) cambios.presupuesto = String(dto.presupuesto);
+    if (dto.estatus !== undefined) cambios.estatus = dto.estatus;
+    if (dto.porcentajeAvance !== undefined) cambios.porcentajeAvance = dto.porcentajeAvance;
+    if (dto.responsableId !== undefined) cambios.responsableId = dto.responsableId;
+    if (dto.dependenciaId !== undefined) cambios.dependenciaId = dto.dependenciaId;
+    if (Object.keys(cambios).length > 0) {
+      await this.tareas.update(id, cambios);
+    }
     return this.obtener(id, user);
   }
 

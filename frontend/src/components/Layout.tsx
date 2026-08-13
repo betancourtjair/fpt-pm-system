@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { clearSession, getUsuario } from '../lib/api';
 
-type ItemActivo = 'inicio' | 'proyectos' | 'gantt';
+type ItemActivo = 'inicio' | 'proyectos' | 'gantt' | 'usuarios';
 
 // Shell compartido (header + nav lateral) — extraído del Dashboard original
 // para que Proyectos/Gantt (Fase 1) usen la misma cáscara visual sin
@@ -49,6 +49,11 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
         <Link to="/gantt" className={itemClase('gantt')}>
           Diagrama de Gantt
         </Link>
+        {Boolean(usuario?.permisos?.manage_users) && (
+          <Link to="/usuarios" className={itemClase('usuarios')}>
+            Usuarios
+          </Link>
+        )}
         <div className="px-6 py-3 text-primary-200 opacity-60">Notificaciones (Fase 2)</div>
       </nav>
 

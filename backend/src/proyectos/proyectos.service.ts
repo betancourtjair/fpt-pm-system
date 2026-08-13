@@ -209,15 +209,21 @@ export class ProyectosService {
       if (!responsable) throw new NotFoundException('El responsable indicado no existe.');
     }
 
-    Object.assign(proyecto, {
-      nombre: dto.nombre ?? proyecto.nombre,
-      fechaInicio: dto.fechaInicio ?? proyecto.fechaInicio,
-      fechaFin: dto.fechaFin ?? proyecto.fechaFin,
-      presupuesto: dto.presupuesto !== undefined ? String(dto.presupuesto) : proyecto.presupuesto,
-      estatus: dto.estatus ?? proyecto.estatus,
-      responsableId: dto.responsableId ?? proyecto.responsableId,
-    });
-    await this.proyectos.save(proyecto);
+    // IMPORTANTE: se actualiza con un UPDATE dirigido (no proyecto.save())
+    // porque `proyecto` se cargó con la relación `responsable` ya resuelta;
+    // si solo se reasigna la columna escalar responsableId y se guarda la
+    // entidad completa, TypeORM puede preferir el objeto de relación viejo
+    // que sigue en memoria y el cambio se pierde silenciosamente.
+    const cambios: Record<string, unknown> = {};
+    if (dto.nombre !== undefined) cambios.nombre = dto.nombre;
+    if (dto.fechaInicio !== undefined) cambios.fechaInicio = dto.fechaInicio;
+    if (dto.fechaFin !== undefined) cambios.fechaFin = dto.fechaFin;
+    if (dto.presupuesto !== undefined) cambios.presupuesto = String(dto.presupuesto);
+    if (dto.estatus !== undefined) cambios.estatus = dto.estatus;
+    if (dto.responsableId !== undefined) cambios.responsableId = dto.responsableId;
+    if (Object.keys(cambios).length > 0) {
+      await this.proyectos.update(id, cambios);
+    }
     return this.obtener(id, user);
   }
 

@@ -102,12 +102,34 @@ export const tareasApi = {
   eliminar: (id: number) => api.delete(`/tareas/${id}`).then((r) => r.data),
 };
 
+export type UsuarioDirectorio = {
+  id: number;
+  nombre: string;
+  email: string;
+  activo: boolean;
+  mustChangePassword: boolean;
+  verPresupuestoAutorizado: boolean;
+  rolId: number;
+  rol: string | null;
+  areaId: number | null;
+  area: string | null;
+  direccionId: number | null;
+  direccion: string | null;
+};
+
 export const usuariosApi = {
-  listar: () => api.get<any[]>('/usuarios').then((r) => r.data),
+  listar: () => api.get<UsuarioDirectorio[]>('/usuarios').then((r) => r.data),
+  crear: (dto: Record<string, unknown>) =>
+    api.post<UsuarioDirectorio>('/usuarios', dto).then((r) => r.data),
+  actualizar: (id: number, dto: Record<string, unknown>) =>
+    api.patch<UsuarioDirectorio>(`/usuarios/${id}`, dto).then((r) => r.data),
   autorizarPresupuesto: (id: number, autorizar: boolean) =>
     api.patch(`/usuarios/${id}/autorizar-presupuesto`, { autorizar }).then((r) => r.data),
 };
 
+export type Rol = { id: number; nombre: string; permisos: Record<string, unknown> };
+
 export const catalogoApi = {
   direcciones: () => api.get<Direccion[]>('/direcciones').then((r) => r.data),
+  roles: () => api.get<Rol[]>('/roles').then((r) => r.data),
 };

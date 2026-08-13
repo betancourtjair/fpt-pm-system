@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Proyectos from './pages/Proyectos';
 import ProyectoDetalle from './pages/ProyectoDetalle';
 import Gantt from './pages/Gantt';
+import Usuarios from './pages/Usuarios';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -49,6 +50,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Gantt />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/usuarios"
+          element={
+            <ProtectedRoute>
+              <Usuarios />
             </ProtectedRoute>
           }
         />
