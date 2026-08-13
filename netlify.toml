@@ -1,0 +1,17 @@
+# Configuración de Netlify — ver PID sección 4.3 (plan de despliegue MVP gratuito).
+# En el dashboard de Netlify: Add new site > Import an existing project > selecciona
+# este repositorio. Netlify detecta este archivo automáticamente.
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "frontend/dist"
+
+# La variable VITE_API_URL (URL del backend en Render) se configura en:
+# Netlify → Site configuration → Environment variables (no vive en este archivo).
+
+# Todas las rutas del SPA (React Router) deben resolver a index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

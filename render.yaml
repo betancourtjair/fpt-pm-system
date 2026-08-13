@@ -1,0 +1,23 @@
+# Blueprint de Render — ver PID sección 4.3 (plan de despliegue MVP gratuito).
+# En el dashboard de Render: New > Blueprint > selecciona este repositorio.
+# Las variables marcadas con "sync: false" se capturan/pegan a mano en el
+# dashboard (son secretos: NO viven en este archivo ni en el repo).
+services:
+  - type: web
+    name: fpt-pm-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # cadena de conexión de Supabase (Settings → Database)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: CORS_ORIGIN
+        sync: false   # dominio del frontend en Netlify, ej. https://tu-sitio.netlify.app
+      - key: RESEND_API_KEY
+        sync: false   # se usa a partir de la Fase 2 (alertas) — puede quedar vacío por ahora

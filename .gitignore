@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Builds
+backend/dist/
+frontend/dist/
+
+# Variables de entorno reales — NUNCA subir esto a Git
+.env
+.env.local
+*.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Credenciales — recordatorio: nunca deben vivir en el repo
+CONFIDENCIAL_*

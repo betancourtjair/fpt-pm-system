@@ -1,0 +1,54 @@
+# Entorno de desarrollo local — ver PID sección 4.3 (en producción se usan
+# Supabase en vez de "db" y Upstash en vez de "redis").
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fpt_user
+      POSTGRES_PASSWORD: fpt_pass
+      POSTGRES_DB: fpt_pm
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fpt_user -d fpt_pm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://fpt_user:fpt_pass@db:5432/fpt_pm?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-secret-cambia-en-produccion
+      JWT_EXPIRES_IN: 8h
+      CORS_ORIGIN: http://localhost:5173
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+
+volumes:
+  db_data:
