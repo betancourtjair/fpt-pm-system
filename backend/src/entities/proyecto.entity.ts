@@ -1,8 +1,16 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  JoinTable,
+  ManyToMany,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { Usuario } from './usuario.entity';
+import { Area } from './area.entity';
 
-// Entidad de referencia — el módulo de API para Proyectos se construye en la
-// Fase 1 del roadmap (PID sección 7). Aquí solo se mapea la tabla ya creada
-// por db/schema.sql para que quede disponible desde el primer montado.
+// Módulo de Proyectos — Fase 1 del roadmap (PID sección 7).
 @Entity('proyectos')
 export class Proyecto {
   @PrimaryGeneratedColumn()
@@ -23,6 +31,27 @@ export class Proyecto {
   @Column({ type: 'varchar', length: 30, default: 'no_iniciado' })
   estatus: string;
 
+  @Column({ name: 'responsable_id', type: 'int', nullable: true })
+  responsableId: number | null;
+
+  @ManyToOne(() => Usuario)
+  @JoinColumn({ name: 'responsable_id' })
+  responsable: Usuario | null;
+
   @Column({ name: 'creado_por', type: 'int', nullable: true })
   creadoPor: number | null;
+
+  @ManyToOne(() => Usuario)
+  @JoinColumn({ name: 'creado_por' })
+  creador: Usuario | null;
+
+  // Áreas involucradas en el proyecto — usadas para filtrar por alcance
+  // (director ve proyectos de su Dirección, gerente_area ve los de su Área).
+  @ManyToMany(() => Area)
+  @JoinTable({
+    name: 'proyecto_areas',
+    joinColumn: { name: 'proyecto_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'area_id', referencedColumnName: 'id' },
+  })
+  areas: Area[];
 }

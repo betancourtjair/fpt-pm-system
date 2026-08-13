@@ -11,6 +11,7 @@ export interface JwtPayload {
   rol: string;
   areaId: number | null;
   direccionId: number | null;
+  permisos: Record<string, unknown>;
 }
 
 @Injectable()
@@ -46,6 +47,7 @@ export class AuthService {
       rol: usuario.rol.nombre,
       areaId: usuario.areaId,
       direccionId: usuario.area?.direccionId ?? null,
+      permisos: usuario.rol.permisos,
     };
 
     return {
@@ -82,10 +84,13 @@ export class AuthService {
       nombre: usuario.nombre,
       email: usuario.email,
       rol: usuario.rol.nombre,
+      areaId: usuario.areaId,
+      direccionId: usuario.area?.direccionId ?? null,
       area: usuario.area?.nombre ?? null,
       direccion: usuario.area?.direccion?.nombre ?? null,
       mustChangePassword: usuario.mustChangePassword,
       verPresupuestoAutorizado: usuario.verPresupuestoAutorizado,
+      permisos: usuario.rol.permisos,
     };
   }
 }

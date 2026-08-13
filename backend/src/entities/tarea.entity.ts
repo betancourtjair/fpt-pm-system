@@ -1,7 +1,16 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  JoinTable,
+  ManyToMany,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { Usuario } from './usuario.entity';
+import { Proyecto } from './proyecto.entity';
 
-// Entidad de referencia — el módulo de API para Tareas/Gantt se construye en
-// la Fase 1 del roadmap (PID sección 7).
+// Módulo de Tareas / Gantt — Fase 1 del roadmap (PID sección 7).
 @Entity('tareas')
 export class Tarea {
   @PrimaryGeneratedColumn()
@@ -9,6 +18,10 @@ export class Tarea {
 
   @Column({ name: 'proyecto_id' })
   proyectoId: number;
+
+  @ManyToOne(() => Proyecto)
+  @JoinColumn({ name: 'proyecto_id' })
+  proyecto: Proyecto;
 
   @Column({ type: 'varchar', length: 200 })
   nombre: string;
@@ -27,4 +40,28 @@ export class Tarea {
 
   @Column({ name: 'porcentaje_avance', type: 'smallint', default: 0 })
   porcentajeAvance: number;
+
+  @Column({ name: 'responsable_id', type: 'int', nullable: true })
+  responsableId: number | null;
+
+  @ManyToOne(() => Usuario)
+  @JoinColumn({ name: 'responsable_id' })
+  responsable: Usuario | null;
+
+  // Dependencia simple (Fase 1): esta tarea no puede iniciar hasta que
+  // termine su predecesora. El Gantt la dibuja como una flecha entre barras.
+  @Column({ name: 'dependencia_id', type: 'int', nullable: true })
+  dependenciaId: number | null;
+
+  @ManyToOne(() => Tarea)
+  @JoinColumn({ name: 'dependencia_id' })
+  dependencia: Tarea | null;
+
+  @ManyToMany(() => Usuario)
+  @JoinTable({
+    name: 'tarea_usuarios',
+    joinColumn: { name: 'tarea_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'usuario_id', referencedColumnName: 'id' },
+  })
+  usuariosAsignados: Usuario[];
 }

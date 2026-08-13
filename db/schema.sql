@@ -1,7 +1,8 @@
 -- =====================================================================
 -- Esquema (DDL) — Sistema de Gestión de Proyectos, Fitness Para Todos
--- Idéntico al definido y probado en el PID, sección 5.2, ya incluyendo
--- las columnas de autorización de presupuesto (PID sección 2.1 y 8).
+-- Incluye las columnas de autorización de presupuesto (PID sección 2.1 y 8)
+-- y las tablas/columnas del módulo de Proyectos y Tareas (Fase 1, PID
+-- sección 7): responsables, usuarios asignados y dependencias entre tareas.
 -- Aplica esto UNA vez por base de datos (local o Supabase), antes de
 -- correr db/seed.sql.
 -- =====================================================================
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS proyectos (
   fecha_fin DATE NOT NULL,
   presupuesto NUMERIC(14,2) NOT NULL,
   estatus VARCHAR(30) DEFAULT 'no_iniciado',
+  responsable_id INT REFERENCES usuarios(id),
   creado_por INT REFERENCES usuarios(id)
 );
 
@@ -63,7 +65,17 @@ CREATE TABLE IF NOT EXISTS tareas (
   fecha_fin DATE NOT NULL,
   presupuesto NUMERIC(14,2),
   estatus VARCHAR(30) DEFAULT 'no_iniciada',
-  porcentaje_avance SMALLINT DEFAULT 0
+  porcentaje_avance SMALLINT DEFAULT 0,
+  responsable_id INT REFERENCES usuarios(id),
+  dependencia_id INT REFERENCES tareas(id)
+);
+
+-- Usuarios asignados a una tarea (M:N) — "asignado" es el scope de permisos
+-- del rol colaborador (PID sección 9.2): solo ve/actualiza lo que está aquí.
+CREATE TABLE IF NOT EXISTS tarea_usuarios (
+  tarea_id INT REFERENCES tareas(id) ON DELETE CASCADE,
+  usuario_id INT REFERENCES usuarios(id) ON DELETE CASCADE,
+  PRIMARY KEY (tarea_id, usuario_id)
 );
 
 CREATE TABLE IF NOT EXISTS alertas_enviadas (

@@ -6,3 +6,26 @@ body {
   font-family: 'Inter', sans-serif;
   background: #F4F2F8;
 }
+
+/* Exportar el Gantt a PDF usando la impresión nativa del navegador (PID
+   sección 7.3) — evita agregar una librería nueva solo para esto. Al
+   imprimir se oculta todo el shell (header/nav) y solo queda el gráfico,
+   marcado con la clase .gantt-imprimible. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .gantt-imprimible,
+  .gantt-imprimible * {
+    visibility: visible;
+  }
+  .gantt-imprimible {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .no-imprimir {
+    display: none !important;
+  }
+}

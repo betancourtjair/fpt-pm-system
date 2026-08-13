@@ -5,6 +5,8 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { CatalogoModule } from './catalogo/catalogo.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
+import { ProyectosModule } from './proyectos/proyectos.module';
+import { TareasModule } from './tareas/tareas.module';
 
 @Module({
   imports: [
@@ -14,7 +16,9 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     AuthModule,
     CatalogoModule,
     UsuariosModule,
-    // Próximos módulos (Fase 1 del roadmap, PID sección 7): proyectos, tareas, alertas.
+    ProyectosModule,
+    TareasModule,
+    // Próximo módulo (Fase 2 del roadmap, PID sección 7): alertas.
   ],
 })
 export class AppModule {}
