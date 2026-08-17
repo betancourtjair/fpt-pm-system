@@ -259,7 +259,7 @@ export default function Proyectos() {
                     onClick={() => navigate(`/proyectos/${p.id}`)}
                     style={{ borderLeft: `4px solid ${colorFila}` }}
                     className={`border-t border-gray-100 cursor-pointer transition hover:bg-primary-100/60 ${
-                      i % 2 === 1 ? 'bg-gray-50' : 'bg-white'
+                      i % 2 === 1 ? 'bg-primary-50' : 'bg-white'
                     }`}
                   >
                     <td className="px-5 py-3 font-semibold text-primary-700">{p.nombre}</td>
