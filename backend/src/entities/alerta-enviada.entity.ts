@@ -9,7 +9,11 @@ import { Usuario } from './usuario.entity';
 // "vencida" (mejora funcional): se dispara una sola vez cuando una tarea
 // pasa su fecha_fin sin marcarse como completada — antes de esto, pasada
 // la fecha límite nadie volvía a saber nada de la tarea.
-export type TipoAlerta = 'asignacion' | '48h' | '24h' | 'vencida';
+// 'bloqueada' (mejora sugerida, ver README sección 4): avisa al Director de
+// la Dirección dueña del proyecto — misma tabla/idempotencia que el resto,
+// así que un Director solo recibe este aviso UNA vez por tarea aunque esa
+// tarea se bloquee, desbloquee y vuelva a bloquear varias veces después.
+export type TipoAlerta = 'asignacion' | '48h' | '24h' | 'vencida' | 'bloqueada';
 
 @Entity('alertas_enviadas')
 export class AlertaEnviada {

@@ -114,3 +114,16 @@ export function htmlVencida(tarea: DatosTarea): string {
   const cuerpo = `<p style="font-size:14px;color:#374151;line-height:1.5;margin:0;">Esta tarea <strong>${texto}</strong> y sigue sin marcarse como completada. Actualiza su estatus o su fecha límite en el sistema para darle seguimiento.</p>`;
   return envoltura('Tarea vencida', '#E8384F', cuerpo, tarea);
 }
+
+// Automatización simple (mejora sugerida, ver README sección 4): avisa al
+// Director de la Dirección dueña del proyecto cuando una tarea cae en
+// "bloqueada" — es la señal de que algo necesita su intervención, no solo
+// la del responsable de la tarea.
+export function asuntoBloqueada(tarea: DatosTarea): string {
+  return `Tarea bloqueada: "${tarea.nombre}"`;
+}
+
+export function htmlBloqueada(tarea: DatosTarea): string {
+  const cuerpo = `<p style="font-size:14px;color:#374151;line-height:1.5;margin:0;">Esta tarea del proyecto <strong>${tarea.proyectoNombre}</strong> se marcó como <strong>bloqueada</strong>. Puede necesitar tu intervención para que el proyecto no se atrase.</p>`;
+  return envoltura('Tarea bloqueada', '#E8384F', cuerpo, tarea);
+}

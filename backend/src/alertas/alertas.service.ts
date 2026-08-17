@@ -9,9 +9,11 @@ import { Usuario } from '../entities/usuario.entity';
 import { EmailService } from '../common/email.service';
 import {
   asuntoAsignacion,
+  asuntoBloqueada,
   asuntoRecordatorio,
   asuntoVencida,
   htmlAsignacion,
+  htmlBloqueada,
   htmlRecordatorio,
   htmlVencida,
 } from './plantillas';
@@ -85,6 +87,49 @@ export class AlertasService {
         usuarioId: usuario.id,
         tipo: 'asignacion',
         destinatario: usuario.email,
+        datosTarea,
+      });
+    }
+  }
+
+  // Automatización simple #2 (mejora sugerida, ver README sección 4):
+  // llamado desde TareasService cuando una tarea pasa a "bloqueada" — avisa
+  // a cada Director cuya Dirección incluya alguna de las áreas del
+  // proyecto (un proyecto puede tocar más de una Dirección, aunque no sea
+  // lo usual). "Director" se resuelve igual que el resto del sistema: rol
+  // 'director' cuya área de inicio de sesión cuelga de esa Dirección.
+  async notificarTareaBloqueada(tareaId: number): Promise<void> {
+    const tarea = await this.tareasRepo.findOne({ where: { id: tareaId }, relations: { proyecto: true } });
+    if (!tarea) return;
+
+    const directores: { id: number; email: string; activo: boolean }[] = await this.usuariosRepo.query(
+      `SELECT DISTINCT u.id, u.email, u.activo
+       FROM usuarios u
+       JOIN roles r ON r.id = u.rol_id
+       JOIN areas a ON a.id = u.area_id
+       WHERE r.nombre = 'director'
+         AND a.direccion_id IN (
+           SELECT DISTINCT a2.direccion_id FROM proyecto_areas pa
+           JOIN areas a2 ON a2.id = pa.area_id
+           WHERE pa.proyecto_id = $1
+         )`,
+      [tarea.proyectoId],
+    );
+    if (directores.length === 0) return;
+
+    const datosTarea: DatosTarea = {
+      id: tarea.id,
+      nombre: tarea.nombre,
+      fechaFin: tarea.fechaFin,
+      proyectoNombre: tarea.proyecto?.nombre ?? '',
+    };
+    for (const director of directores) {
+      if (!director.activo) continue;
+      await this.registrarYEnviar({
+        tareaId,
+        usuarioId: director.id,
+        tipo: 'bloqueada',
+        destinatario: director.email,
         datosTarea,
       });
     }
@@ -230,6 +275,9 @@ export class AlertasService {
     } else if (args.tipo === 'vencida') {
       asunto = asuntoVencida(args.datosTarea);
       html = htmlVencida(args.datosTarea);
+    } else if (args.tipo === 'bloqueada') {
+      asunto = asuntoBloqueada(args.datosTarea);
+      html = htmlBloqueada(args.datosTarea);
     } else {
       asunto = asuntoRecordatorio(args.datosTarea, args.tipo);
       html = htmlRecordatorio(args.datosTarea, args.tipo);

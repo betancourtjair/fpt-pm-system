@@ -56,6 +56,17 @@ export class TareasService {
     }
   }
 
+  // Automatización simple #2 (mejora sugerida, ver README sección 4): igual
+  // blindaje que notificarAsignacionSinRomper — un correo caído nunca debe
+  // tronar la actualización de la tarea en sí.
+  private async notificarBloqueoSinRomper(tareaId: number) {
+    try {
+      await this.alertas.notificarTareaBloqueada(tareaId);
+    } catch {
+      // Ya se registró en el log de AlertasService/EmailService.
+    }
+  }
+
   private emitirCambio(proyectoId: number, tareaId: number, accion: 'creada' | 'actualizada' | 'eliminada') {
     this.eventos.emit('tarea.cambio', { proyectoId, tareaId, accion });
   }
@@ -69,6 +80,7 @@ export class TareasService {
       fechaFin: tarea.fechaFin,
       estatus: tarea.estatus,
       porcentajeAvance: tarea.porcentajeAvance,
+      prioridad: tarea.prioridad,
       responsable: tarea.responsable
         ? { id: tarea.responsable.id, nombre: tarea.responsable.nombre }
         : null,
@@ -236,6 +248,7 @@ export class TareasService {
       presupuesto: dto.presupuesto !== undefined ? String(dto.presupuesto) : null,
       responsableId: dto.responsableId,
       dependenciaId: dto.dependenciaId ?? null,
+      prioridad: dto.prioridad ?? 'media',
     });
     const guardada = await this.tareas.save(tarea);
     if (dto.usuarioIds?.length) await this.asignarUsuarios(guardada.id, dto.usuarioIds);
@@ -305,8 +318,25 @@ export class TareasService {
     if (dto.porcentajeAvance !== undefined) cambios.porcentajeAvance = dto.porcentajeAvance;
     if (dto.responsableId !== undefined) cambios.responsableId = dto.responsableId;
     if (dto.dependenciaId !== undefined) cambios.dependenciaId = dto.dependenciaId;
+    if (dto.prioridad !== undefined) cambios.prioridad = dto.prioridad;
+    // Automatizaciones simples (ver aplicarAutomatizaciones más abajo) —
+    // aquí se aplican sobre el objeto `cambios` porque este flujo hace un
+    // UPDATE dirigido en vez de tarea.save() (ver comentario arriba).
+    if (dto.porcentajeAvance === 100 && dto.estatus === undefined && tarea.estatus !== 'completada') {
+      cambios.estatus = 'completada';
+    } else if (dto.estatus === 'completada' && dto.porcentajeAvance === undefined) {
+      cambios.porcentajeAvance = 100;
+    }
+    // Automatización simple #2: se checa ANTES del update, contra el
+    // estatus original de `tarea` (todavía no mutado en este flujo) — así
+    // solo dispara en la transición hacia "bloqueada", nunca en cada
+    // guardado subsecuente mientras la tarea sigue bloqueada.
+    const pasaABloqueada = cambios.estatus === 'bloqueada' && tarea.estatus !== 'bloqueada';
     if (Object.keys(cambios).length > 0) {
       await this.tareas.update(id, cambios);
+    }
+    if (pasaABloqueada) {
+      await this.notificarBloqueoSinRomper(id);
     }
 
     // Alerta "asignacion": responsable final (si cambió) + usuarios
@@ -336,11 +366,31 @@ export class TareasService {
     if (!esAsignado) {
       throw new ForbiddenException('Solo puedes actualizar el avance de tareas asignadas a ti.');
     }
+    const estatusOriginal = tarea.estatus;
     if (dto.estatus !== undefined) tarea.estatus = dto.estatus;
     if (dto.porcentajeAvance !== undefined) tarea.porcentajeAvance = dto.porcentajeAvance;
+    this.aplicarAutomatizaciones(tarea, dto);
     await this.tareas.save(tarea);
+    if (tarea.estatus === 'bloqueada' && estatusOriginal !== 'bloqueada') {
+      await this.notificarBloqueoSinRomper(id);
+    }
     this.emitirCambio(tarea.proyectoId, id, 'actualizada');
     return this.obtener(id, user);
+  }
+
+  // Automatizaciones simples (mejora sugerida, ver README sección 4): reglas
+  // fijas, sin motor de configuración — cubren el caso más común sin que
+  // nadie tenga que acordarse de sincronizar estatus y % a mano.
+  // 1) Si el avance llega a 100 y no se tocó el estatus explícitamente en
+  //    este mismo request, la tarea pasa a "completada" sola.
+  // 2) Si se marca "completada" a mano, el avance se redondea a 100 para
+  //    que la barra de progreso nunca contradiga al estatus.
+  private aplicarAutomatizaciones(tarea: Tarea, dto: { estatus?: string; porcentajeAvance?: number }) {
+    if (dto.porcentajeAvance === 100 && dto.estatus === undefined && tarea.estatus !== 'completada') {
+      tarea.estatus = 'completada';
+    } else if (dto.estatus === 'completada' && dto.porcentajeAvance === undefined) {
+      tarea.porcentajeAvance = 100;
+    }
   }
 
   // Reasignación masiva de responsable (prioridad 11, segunda mitad): la
@@ -371,6 +421,39 @@ export class TareasService {
       await this.actualizar(id, { responsableId: dto.responsableId }, user);
     }
     return this.listar(proyectoId, user);
+  }
+
+  // "Mis tareas" (mejora sugerida, ver README sección 4): todo lo asignado
+  // al usuario actual a través de TODOS sus proyectos, sin importar el
+  // alcance por Área/Dirección — si ya está asignado, ya tiene visibilidad
+  // sobre esa tarea puntual aunque el proyecto completo esté fuera de su
+  // alcance normal. Ordenado por fecha de fin (lo más urgente primero).
+  async listarMisTareas(user: JwtPayload) {
+    const tareas = await this.tareas
+      .createQueryBuilder('tarea')
+      .leftJoinAndSelect('tarea.proyecto', 'proyecto')
+      .leftJoinAndSelect('tarea.responsable', 'responsable')
+      .leftJoinAndSelect('tarea.dependencia', 'dependencia')
+      .leftJoinAndSelect('tarea.usuariosAsignados', 'usuariosAsignados')
+      .where('tarea.responsable_id = :uid', { uid: user.sub })
+      .orWhere((qb) => {
+        const sub = qb
+          .subQuery()
+          .select('tu.tarea_id')
+          .from('tarea_usuarios', 'tu')
+          .where('tu.usuario_id = :uid')
+          .getQuery();
+        return 'tarea.id IN ' + sub;
+      })
+      .setParameter('uid', user.sub)
+      .orderBy('tarea.fecha_fin', 'ASC')
+      .getMany();
+
+    const autorizado = await this.proyectos.autorizacionPresupuesto(user);
+    return tareas.map((t) => ({
+      ...this.serializar(t, user, autorizado),
+      proyecto: { id: t.proyecto.id, nombre: t.proyecto.nombre },
+    }));
   }
 
   async eliminar(id: number, user: JwtPayload) {

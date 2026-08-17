@@ -69,6 +69,14 @@ export class TareasController {
     return this.tareas.reasignarMasivo(proyectoId, dto, user);
   }
 
+  // IMPORTANTE: debe ir ANTES de "tareas/:id" (mismo motivo documentado
+  // arriba para "reasignar-masivo") — si no, Nest interpreta "mis-tareas"
+  // como el :id y ParseIntPipe la rechaza con 400 antes de llegar aquí.
+  @Get('tareas/mis-tareas')
+  misTareas(@CurrentUser() user: JwtPayload) {
+    return this.tareas.listarMisTareas(user);
+  }
+
   @Get('tareas/:id')
   obtener(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.tareas.obtener(id, user);

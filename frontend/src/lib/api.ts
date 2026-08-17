@@ -118,11 +118,24 @@ export type Tarea = {
   fechaFin: string;
   estatus: string;
   porcentajeAvance: number;
+  prioridad: 'alta' | 'media' | 'baja';
   presupuesto?: number;
   responsable: UsuarioResumen | null;
   dependenciaId: number | null;
   dependencia: UsuarioResumen | null;
   usuariosAsignados: UsuarioResumen[];
+  // Solo viene poblado en /tareas/mis-tareas (mejora sugerida: vista
+  // transversal a proyectos) — en el resto de endpoints ya se sabe el
+  // proyecto por el contexto de la pantalla.
+  proyecto?: { id: number; nombre: string };
+};
+
+export type ComentarioTarea = {
+  id: number;
+  tareaId: number;
+  texto: string;
+  creadoEn: string;
+  usuario: UsuarioResumen | null;
 };
 
 export const proyectosApi = {
@@ -132,6 +145,11 @@ export const proyectosApi = {
   actualizar: (id: number, dto: Record<string, unknown>) =>
     api.patch<Proyecto>(`/proyectos/${id}`, dto).then((r) => r.data),
   eliminar: (id: number) => api.delete(`/proyectos/${id}`).then((r) => r.data),
+  // Plantillas de proyecto (mejora sugerida) — clona el proyecto con todas
+  // sus tareas (dependencias y asignaciones incluidas) sobre una nueva
+  // fecha de inicio.
+  clonar: (id: number, dto: { nombre: string; fechaInicio: string }) =>
+    api.post<Proyecto>(`/proyectos/${id}/clonar`, dto).then((r) => r.data),
   // Presupuesto real vs. plan (prioridad 8) — bitácora de gastos reales.
   gastos: (proyectoId: number) => api.get<Gasto[]>(`/proyectos/${proyectoId}/gastos`).then((r) => r.data),
   crearGasto: (proyectoId: number, dto: { concepto: string; monto: number; fecha: string }) =>
@@ -165,6 +183,18 @@ export const tareasApi = {
     api
       .patch<Tarea[]>(`/proyectos/${proyectoId}/tareas/reasignar-masivo`, { tareaIds, responsableId })
       .then((r) => r.data),
+  // "Mis tareas" (mejora sugerida) — todo lo asignado al usuario actual a
+  // través de todos sus proyectos, sin tener que entrar uno por uno.
+  misTareas: () => api.get<Tarea[]>('/tareas/mis-tareas').then((r) => r.data),
+};
+
+// Comentarios por tarea (mejora sugerida) — para discutir una tarea sin
+// salirse a correo/WhatsApp.
+export const comentariosApi = {
+  deTarea: (tareaId: number) => api.get<ComentarioTarea[]>(`/tareas/${tareaId}/comentarios`).then((r) => r.data),
+  crear: (tareaId: number, texto: string) =>
+    api.post<ComentarioTarea[]>(`/tareas/${tareaId}/comentarios`, { texto }).then((r) => r.data),
+  eliminar: (comentarioId: number) => api.delete(`/comentarios/${comentarioId}`).then((r) => r.data),
 };
 
 // Adjuntar archivos a proyectos/tareas (prioridad 11). El archivo en sí

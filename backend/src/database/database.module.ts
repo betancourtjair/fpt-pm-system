@@ -9,11 +9,23 @@ import { Tarea } from '../entities/tarea.entity';
 import { AlertaEnviada } from '../entities/alerta-enviada.entity';
 import { GastoProyecto } from '../entities/gasto-proyecto.entity';
 import { Adjunto } from '../entities/adjunto.entity';
+import { ComentarioTarea } from '../entities/comentario-tarea.entity';
 
 // Las tablas las crea db/schema.sql (DDL ya probado contra PostgreSQL — ver
 // PID sección 5.2), por eso synchronize siempre va en false: TypeORM solo
 // lee/escribe sobre un esquema que ya existe, nunca lo genera él mismo.
-const ENTIDADES = [Direccion, Area, Rol, Usuario, Proyecto, Tarea, AlertaEnviada, GastoProyecto, Adjunto];
+const ENTIDADES = [
+  Direccion,
+  Area,
+  Rol,
+  Usuario,
+  Proyecto,
+  Tarea,
+  AlertaEnviada,
+  GastoProyecto,
+  Adjunto,
+  ComentarioTarea,
+];
 
 @Module({
   imports: [

@@ -41,6 +41,11 @@ export class Tarea {
   @Column({ name: 'porcentaje_avance', type: 'smallint', default: 0 })
   porcentajeAvance: number;
 
+  // Prioridad — mejora sugerida (ver README sección 4) para ayudar a un
+  // responsable con muchas tareas a saber cuál atacar primero.
+  @Column({ type: 'varchar', length: 10, default: 'media' })
+  prioridad: string;
+
   @Column({ name: 'responsable_id', type: 'int', nullable: true })
   responsableId: number | null;
 

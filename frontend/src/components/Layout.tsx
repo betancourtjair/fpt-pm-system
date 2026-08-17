@@ -4,7 +4,7 @@ import { clearSession, getUsuario, msRestantesDeSesion } from '../lib/api';
 import { cerrarSocket } from '../lib/socket';
 import NotificacionesBell from './NotificacionesBell';
 
-type ItemActivo = 'inicio' | 'proyectos' | 'gantt' | 'usuarios' | 'metodologia';
+type ItemActivo = 'inicio' | 'proyectos' | 'mis-tareas' | 'gantt' | 'usuarios' | 'metodologia';
 
 // Shell compartido (header + nav lateral) — extraído del Dashboard original
 // para que Proyectos/Gantt (Fase 1) usen la misma cáscara visual sin
@@ -98,6 +98,9 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
           </Link>
           <Link to="/proyectos" className={itemClase('proyectos')} onClick={cerrarMenu}>
             Proyectos
+          </Link>
+          <Link to="/mis-tareas" className={itemClase('mis-tareas')} onClick={cerrarMenu}>
+            Mis tareas
           </Link>
           <Link to="/gantt" className={itemClase('gantt')} onClick={cerrarMenu}>
             Diagrama de Gantt

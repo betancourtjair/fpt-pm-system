@@ -18,6 +18,7 @@ import { ProyectosService } from './proyectos.service';
 import { CreateProyectoDto } from './dto/create-proyecto.dto';
 import { UpdateProyectoDto } from './dto/update-proyecto.dto';
 import { CreateGastoDto } from './dto/create-gasto.dto';
+import { ClonarProyectoDto } from './dto/clonar-proyecto.dto';
 
 // Toda la lógica de alcance/permisos por rol vive en ProyectosService — el
 // controlador solo enruta y valida el body (PID sección 9.2).
@@ -66,6 +67,18 @@ export class ProyectosController {
   @Delete(':id')
   eliminar(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.proyectos.eliminar(id, user);
+  }
+
+  // Plantillas de proyecto (mejora sugerida, ver README sección 4): clona
+  // un proyecto existente (áreas, presupuesto, tareas con dependencias y
+  // asignaciones) sobre una nueva fecha de inicio.
+  @Post(':id/clonar')
+  clonar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ClonarProyectoDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.proyectos.clonar(id, dto, user);
   }
 
   // Presupuesto real vs. plan (prioridad 8) — anidado bajo el proyecto para

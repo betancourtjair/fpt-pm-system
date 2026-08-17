@@ -10,10 +10,12 @@ import { Area } from '../entities/area.entity';
 import { Direccion } from '../entities/direccion.entity';
 import { Usuario } from '../entities/usuario.entity';
 import { GastoProyecto } from '../entities/gasto-proyecto.entity';
+import { Tarea } from '../entities/tarea.entity';
 import { JwtPayload } from '../auth/auth.service';
 import { CreateProyectoDto } from './dto/create-proyecto.dto';
 import { UpdateProyectoDto } from './dto/update-proyecto.dto';
 import { CreateGastoDto } from './dto/create-gasto.dto';
+import { ClonarProyectoDto } from './dto/clonar-proyecto.dto';
 import {
   esAdmin,
   esDirector,
@@ -34,6 +36,7 @@ export class ProyectosService {
     @InjectRepository(Usuario) private readonly usuarios: Repository<Usuario>,
     @InjectRepository(Direccion) private readonly direcciones: Repository<Direccion>,
     @InjectRepository(GastoProyecto) private readonly gastos: Repository<GastoProyecto>,
+    @InjectRepository(Tarea) private readonly tareasRepo: Repository<Tarea>,
   ) {}
 
   // El color se administra por Dirección (no por Área — más simple de
@@ -360,5 +363,80 @@ export class ProyectosService {
     await this.proyectos.query(`DELETE FROM proyecto_areas WHERE proyecto_id = $1`, [id]);
     await this.proyectos.remove(proyecto);
     return { ok: true };
+  }
+
+  // Plantillas de proyecto (mejora sugerida, ver README sección 4): clona
+  // un proyecto existente —áreas, presupuesto y TODAS sus tareas (con sus
+  // dependencias y usuarios asignados)— sobre una nueva fecha de inicio.
+  // Cada tarea se recorre con el mismo desfase de días entre la fecha de
+  // inicio original del proyecto y la nueva, así que la duración relativa
+  // de cada tarea (y del proyecto completo) se conserva intacta.
+  // Deliberadamente reinicia estatus/avance (nada de "completada" fantasma
+  // en un proyecto que apenas va a empezar) y exige el mismo permiso que
+  // administrar el proyecto origen — clonar es, en el fondo, crear uno nuevo.
+  async clonar(id: number, dto: ClonarProyectoDto, user: JwtPayload) {
+    const original = await this.obtenerEntidad(id);
+    this.verificarPuedeGestionar(original, user);
+
+    // Todo en milisegundos UTC vía Date.parse sobre columnas DATE
+    // ('YYYY-MM-DD') — nunca se lee año/mes/día en hora local, así que no
+    // hay riesgo de que el desfase se corra un día por zona horaria.
+    const desfaseMs = Date.parse(dto.fechaInicio) - Date.parse(original.fechaInicio);
+    const duracionMs = Date.parse(original.fechaFin) - Date.parse(original.fechaInicio);
+    const nuevaFechaFin = new Date(Date.parse(dto.fechaInicio) + duracionMs).toISOString().slice(0, 10);
+    const desplazar = (fechaISO: string) =>
+      new Date(Date.parse(fechaISO) + desfaseMs).toISOString().slice(0, 10);
+
+    const nuevo = this.proyectos.create({
+      nombre: dto.nombre,
+      fechaInicio: dto.fechaInicio,
+      fechaFin: nuevaFechaFin,
+      presupuesto: original.presupuesto,
+      estatus: 'no_iniciado',
+      responsableId: original.responsableId,
+      creadoPor: user.sub,
+    });
+    const guardado = await this.proyectos.save(nuevo);
+    await this.asignarAreas(guardado.id, original.areas.map((a) => a.id));
+
+    const tareasOriginales = await this.tareasRepo.find({ where: { proyectoId: id }, order: { id: 'ASC' } });
+    const idsViejoANuevo = new Map<number, number>();
+    for (const t of tareasOriginales) {
+      const nueva = this.tareasRepo.create({
+        proyectoId: guardado.id,
+        nombre: t.nombre,
+        fechaInicio: desplazar(t.fechaInicio),
+        fechaFin: desplazar(t.fechaFin),
+        presupuesto: t.presupuesto,
+        estatus: 'no_iniciada',
+        porcentajeAvance: 0,
+        prioridad: t.prioridad,
+        responsableId: t.responsableId,
+        dependenciaId: null, // se remapea abajo, una vez que todas ya tienen id nuevo
+      });
+      const guardada = await this.tareasRepo.save(nueva);
+      idsViejoANuevo.set(t.id, guardada.id);
+    }
+    // Segunda pasada: dependencias (remapeadas al id clonado) y usuarios
+    // asignados (los mismos, el gerente del nuevo proyecto los reasigna si
+    // no aplica para esta repetición).
+    for (const t of tareasOriginales) {
+      const nuevoId = idsViejoANuevo.get(t.id)!;
+      if (t.dependenciaId && idsViejoANuevo.has(t.dependenciaId)) {
+        await this.tareasRepo.update(nuevoId, { dependenciaId: idsViejoANuevo.get(t.dependenciaId) });
+      }
+      const asignados: { usuario_id: number }[] = await this.tareasRepo.query(
+        `SELECT usuario_id FROM tarea_usuarios WHERE tarea_id = $1`,
+        [t.id],
+      );
+      for (const a of asignados) {
+        await this.tareasRepo.query(
+          `INSERT INTO tarea_usuarios (tarea_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [nuevoId, a.usuario_id],
+        );
+      }
+    }
+
+    return this.obtener(guardado.id, user);
   }
 }

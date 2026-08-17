@@ -190,6 +190,41 @@ priorizados):
     del Gantt sigue siendo solo de escritorio (depende de eventos de
     mouse) — en celular el Gantt es de solo lectura.
 
+**Segunda ronda de mejoras** (acercar la herramienta a Monday.com sin
+perder lo que ya la hace más simple que MS Project):
+
+1. Prioridad por tarea (alta/media/baja) — chip de color junto al nombre en
+   la tabla, el Kanban y el calendario; se edita desde el mismo formulario
+   de la tarea.
+2. Tablero Kanban (`tareas.prioridad`, `tareas.estatus`): en el detalle de
+   un proyecto, botón "Tablero" junto a "Tabla" — arrastra una tarjeta a
+   otra columna para cambiar su estatus (mismo endpoint que ya usaba
+   "Avance", sin ventana de confirmación: es una acción de bajo riesgo,
+   fácil de revertir arrastrando de vuelta).
+3. Vista de calendario mensual (botón "Calendario", misma pantalla) —
+   alternativa más amigable al Gantt para quien solo quiere ver qué se
+   vence esta semana.
+4. Comentarios por tarea (`comentarios_tarea`) — hilo simple bajo cada
+   tarea (botón "Comentarios" junto a "Archivos"), para discutir sin
+   salirse a correo/WhatsApp. Borrar exige ser quien lo escribió o poder
+   administrar el proyecto.
+5. "Mis tareas" (menú lateral) — todo lo asignado al usuario actual a
+   través de TODOS sus proyectos en una sola pantalla, sin tener que
+   entrar proyecto por proyecto; marca las que ya vencieron.
+6. Plantillas de proyecto — botón "Duplicar como plantilla" en el detalle
+   de un proyecto: clona el proyecto completo (áreas, presupuesto y todas
+   sus tareas con dependencias y asignaciones) sobre una nueva fecha de
+   inicio, conservando la duración relativa de cada tarea. Útil para
+   proyectos que se repiten (abrir una sucursal, lanzar un reto). Estatus y
+   avance de las tareas clonadas siempre arrancan en cero.
+7. Automatizaciones simples: (a) si el % de avance de una tarea llega a
+   100, su estatus pasa a "completada" solo (y viceversa, si se marca
+   "completada" a mano el % sube a 100); (b) si una tarea pasa a
+   "bloqueada", se avisa por correo + notificación in-app a los Directores
+   de la Dirección dueña del proyecto (mismo mecanismo de alertas que ya
+   existía) — un Director recibe este aviso una sola vez por tarea, aunque
+   se bloquee/desbloquee varias veces después.
+
 No incluye todavía: permisos granulares adicionales más allá de los roles
 actuales, ni hardening de seguridad más allá de lo ya implementado (JWT,
 RBAC, cambio de contraseña obligatorio, límite de peticiones por IP). El

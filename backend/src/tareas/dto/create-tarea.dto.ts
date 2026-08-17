@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -45,4 +46,8 @@ export class CreateTareaDto {
   @Type(() => Number)
   @IsInt()
   dependenciaId?: number;
+
+  @IsOptional()
+  @IsIn(['alta', 'media', 'baja'])
+  prioridad?: string;
 }

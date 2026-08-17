@@ -7,9 +7,13 @@ import { Area } from '../entities/area.entity';
 import { Usuario } from '../entities/usuario.entity';
 import { Direccion } from '../entities/direccion.entity';
 import { GastoProyecto } from '../entities/gasto-proyecto.entity';
+import { Tarea } from '../entities/tarea.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Proyecto, Area, Usuario, Direccion, GastoProyecto])],
+  // Tarea se registra también aquí (además de en TareasModule) para que
+  // ProyectosService.clonar() pueda copiar las tareas del proyecto origen
+  // sin crear una dependencia circular entre los dos módulos.
+  imports: [TypeOrmModule.forFeature([Proyecto, Area, Usuario, Direccion, GastoProyecto, Tarea])],
   controllers: [ProyectosController],
   providers: [ProyectosService],
   // TareasModule reutiliza puedeVer/verificarPuedeGestionar para no duplicar

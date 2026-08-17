@@ -4,6 +4,7 @@ import ChangePassword from './pages/ChangePassword';
 import Dashboard from './pages/Dashboard';
 import Proyectos from './pages/Proyectos';
 import ProyectoDetalle from './pages/ProyectoDetalle';
+import MisTareas from './pages/MisTareas';
 import Gantt from './pages/Gantt';
 import Usuarios from './pages/Usuarios';
 import Metodologia from './pages/Metodologia';
@@ -47,6 +48,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <ProyectoDetalle />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mis-tareas"
+          element={
+            <ProtectedRoute>
+              <MisTareas />
             </ProtectedRoute>
           }
         />

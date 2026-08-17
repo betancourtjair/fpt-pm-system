@@ -2,6 +2,9 @@ import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import PanelArchivos from '../components/PanelArchivos';
+import PanelComentarios from '../components/PanelComentarios';
+import KanbanTareas from '../components/KanbanTareas';
+import CalendarioTareas from '../components/CalendarioTareas';
 import {
   descargarBlob,
   getUsuario,
@@ -24,6 +27,15 @@ const ESTATUS_LABEL: Record<string, string> = {
   no_iniciada: 'No iniciada',
 };
 
+// Prioridad (mejora sugerida, ver README sección 4) — ayuda a un
+// responsable con muchas tareas a saber cuál atacar primero.
+const PRIORIDAD_LABEL: Record<string, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+const PRIORIDAD_CLASE: Record<string, string> = {
+  alta: 'bg-danger-500/10 text-danger-600',
+  media: 'bg-accent-500/15 text-accent-700',
+  baja: 'bg-gray-100 text-gray-500',
+};
+
 type FormTarea = {
   nombre: string;
   fechaInicio: string;
@@ -32,6 +44,7 @@ type FormTarea = {
   responsableId: string;
   usuarioIds: number[];
   dependenciaId: string;
+  prioridad: string;
 };
 
 const FORM_VACIO: FormTarea = {
@@ -42,6 +55,7 @@ const FORM_VACIO: FormTarea = {
   responsableId: '',
   usuarioIds: [],
   dependenciaId: '',
+  prioridad: 'media',
 };
 
 // Detalle de un proyecto: tareas, dependencias, asignaciones y el flujo de
@@ -82,9 +96,40 @@ export default function ProyectoDetalle() {
   const [exportando, setExportando] = useState(false);
   const [errorExportar, setErrorExportar] = useState<string | null>(null);
 
+  // Plantillas de proyecto (mejora sugerida) — clonar este proyecto con
+  // todas sus tareas sobre una nueva fecha de inicio.
+  const [mostrarClonar, setMostrarClonar] = useState(false);
+  const [clonarNombre, setClonarNombre] = useState('');
+  const [clonarFechaInicio, setClonarFechaInicio] = useState('');
+  const [clonando, setClonando] = useState(false);
+  const [errorClonar, setErrorClonar] = useState<string | null>(null);
+
   // Adjuntar archivos a una tarea (prioridad 11) — panel expandible bajo la
   // fila de la tarea, una a la vez, para no saturar la tabla por default.
   const [tareaArchivosAbierta, setTareaArchivosAbierta] = useState<number | null>(null);
+
+  // Comentarios por tarea (mejora sugerida) — mismo patrón de panel
+  // expandible que los archivos, una tarea a la vez.
+  const [tareaComentariosAbierta, setTareaComentariosAbierta] = useState<number | null>(null);
+
+  // Tablero Kanban (mejora sugerida) — vista alterna a la tabla, ambas leen
+  // del mismo estado `tareas`.
+  const [vista, setVista] = useState<'tabla' | 'kanban' | 'calendario'>('tabla');
+  const [errorKanban, setErrorKanban] = useState<string | null>(null);
+
+  async function cambiarEstatusDesdeKanban(t: Tarea, nuevoEstatus: string) {
+    setErrorKanban(null);
+    try {
+      if (puedeGestionar) {
+        await tareasApi.actualizar(t.id, { estatus: nuevoEstatus });
+      } else {
+        await tareasApi.actualizarAvance(t.id, { estatus: nuevoEstatus });
+      }
+      cargarTodo();
+    } catch (err: any) {
+      setErrorKanban(err?.response?.data?.message || 'No se pudo actualizar el estatus de la tarea.');
+    }
+  }
 
   // Reasignación masiva de responsable (prioridad 11, segunda mitad) — solo
   // quien puede administrar el proyecto ve la columna de selección.
@@ -190,6 +235,7 @@ export default function ProyectoDetalle() {
       responsableId: t.responsable ? String(t.responsable.id) : '',
       usuarioIds: t.usuariosAsignados.map((u) => u.id),
       dependenciaId: t.dependenciaId ? String(t.dependenciaId) : '',
+      prioridad: t.prioridad ?? 'media',
     });
     setModo(t.id);
     setErrorForm(null);
@@ -212,6 +258,7 @@ export default function ProyectoDetalle() {
       fechaFin: form.fechaFin,
       responsableId: Number(form.responsableId),
       usuarioIds: form.usuarioIds,
+      prioridad: form.prioridad,
     };
     if (form.presupuesto !== '') dto.presupuesto = Number(form.presupuesto);
     if (form.dependenciaId !== '') dto.dependenciaId = Number(form.dependenciaId);
@@ -241,6 +288,30 @@ export default function ProyectoDetalle() {
     if (!confirm(`¿Eliminar el proyecto "${proyecto.nombre}" y todas sus tareas? Esta acción no se puede deshacer.`)) return;
     await proyectosApi.eliminar(proyecto.id);
     navigate('/proyectos');
+  }
+
+  function abrirClonar() {
+    setClonarNombre(proyecto ? `${proyecto.nombre} (copia)` : '');
+    setClonarFechaInicio('');
+    setErrorClonar(null);
+    setMostrarClonar(true);
+  }
+
+  async function clonarProyecto(e: FormEvent) {
+    e.preventDefault();
+    setErrorClonar(null);
+    setClonando(true);
+    try {
+      const nuevo = await proyectosApi.clonar(proyectoId, {
+        nombre: clonarNombre,
+        fechaInicio: clonarFechaInicio,
+      });
+      navigate(`/proyectos/${nuevo.id}`);
+    } catch (err: any) {
+      setErrorClonar(err?.response?.data?.message || 'No se pudo clonar el proyecto.');
+    } finally {
+      setClonando(false);
+    }
   }
 
   function abrirAvance(t: Tarea) {
@@ -344,6 +415,14 @@ export default function ProyectoDetalle() {
               + Nueva tarea
             </button>
           )}
+          {puedeGestionar && (
+            <button
+              onClick={abrirClonar}
+              className="bg-white border border-primary-200 hover:bg-primary-50 text-primary-800 font-bold rounded-lg px-4 py-2 text-sm"
+            >
+              ⧉ Duplicar como plantilla
+            </button>
+          )}
           {esAdmin && (
             <button
               onClick={eliminarProyecto}
@@ -354,6 +433,56 @@ export default function ProyectoDetalle() {
           )}
         </div>
       </div>
+
+      {mostrarClonar && (
+        <form onSubmit={clonarProyecto} className="bg-white rounded-2xl shadow-card p-6 mb-6 space-y-4">
+          <h2 className="font-display font-bold text-base">Duplicar "{proyecto.nombre}" como plantilla</h2>
+          <p className="text-xs text-gray-500">
+            Se copian todas sus tareas (fechas, dependencias, prioridad y asignaciones) desplazadas a la
+            nueva fecha de inicio, manteniendo la misma duración relativa. El estatus y el avance de cada
+            tarea empiezan de cero.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre del nuevo proyecto</label>
+              <input
+                required
+                minLength={3}
+                value={clonarNombre}
+                onChange={(e) => setClonarNombre(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nueva fecha de inicio</label>
+              <input
+                type="date"
+                required
+                value={clonarFechaInicio}
+                onChange={(e) => setClonarFechaInicio(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2"
+              />
+            </div>
+          </div>
+          {errorClonar && <p className="text-danger-500 text-sm font-medium">{errorClonar}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={clonando}
+              className="bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-lg px-5 py-2 text-sm disabled:opacity-60"
+            >
+              {clonando ? 'Duplicando…' : 'Duplicar proyecto'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMostrarClonar(false)}
+              className="text-gray-600 font-semibold text-sm px-3"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
       {'presupuesto' in proyecto ? (
         <div className="bg-white rounded-2xl shadow-card p-5 mb-6">
           {(() => {
@@ -548,6 +677,20 @@ export default function ProyectoDetalle() {
               </select>
             </div>
             <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Prioridad</label>
+              <select
+                value={form.prioridad}
+                onChange={(e) => setForm({ ...form, prioridad: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2"
+              >
+                {Object.entries(PRIORIDAD_LABEL).map(([valor, etiqueta]) => (
+                  <option key={valor} value={valor}>
+                    {etiqueta}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 Depende de (opcional)
               </label>
@@ -638,6 +781,47 @@ export default function ProyectoDetalle() {
         </div>
       )}
 
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={() => setVista('tabla')}
+          className={`text-sm font-bold px-3 py-1.5 rounded-lg ${
+            vista === 'tabla' ? 'bg-primary-600 text-white' : 'bg-white text-gray-500 border border-gray-200'
+          }`}
+        >
+          Tabla
+        </button>
+        <button
+          onClick={() => setVista('kanban')}
+          className={`text-sm font-bold px-3 py-1.5 rounded-lg ${
+            vista === 'kanban' ? 'bg-primary-600 text-white' : 'bg-white text-gray-500 border border-gray-200'
+          }`}
+        >
+          Tablero
+        </button>
+        <button
+          onClick={() => setVista('calendario')}
+          className={`text-sm font-bold px-3 py-1.5 rounded-lg ${
+            vista === 'calendario' ? 'bg-primary-600 text-white' : 'bg-white text-gray-500 border border-gray-200'
+          }`}
+        >
+          Calendario
+        </button>
+      </div>
+
+      {vista === 'kanban' ? (
+        <div className="mb-6">
+          {errorKanban && <p className="text-danger-500 text-xs font-medium mb-2">{errorKanban}</p>}
+          <KanbanTareas
+            tareas={tareas}
+            puedeArrastrar={(t) => puedeGestionar || esAsignado(t)}
+            onCambiarEstatus={cambiarEstatusDesdeKanban}
+          />
+        </div>
+      ) : vista === 'calendario' ? (
+        <div className="mb-6">
+          <CalendarioTareas tareas={tareas} />
+        </div>
+      ) : (
       <div className="bg-white rounded-2xl shadow-card overflow-x-auto">
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-primary-50 text-primary-800 text-left">
@@ -673,7 +857,18 @@ export default function ProyectoDetalle() {
                       />
                     </td>
                   )}
-                  <td className="px-5 py-3 font-semibold text-primary-800">{t.nombre}</td>
+                  <td className="px-5 py-3 font-semibold text-primary-800">
+                    <div className="flex items-center gap-2">
+                      <span>{t.nombre}</span>
+                      <span
+                        className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 ${
+                          PRIORIDAD_CLASE[t.prioridad] ?? PRIORIDAD_CLASE.media
+                        }`}
+                      >
+                        {PRIORIDAD_LABEL[t.prioridad] ?? 'Media'}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-5 py-3 text-gray-500">
                     {t.fechaInicio} → {t.fechaFin}
                   </td>
@@ -747,6 +942,12 @@ export default function ProyectoDetalle() {
                       >
                         {tareaArchivosAbierta === t.id ? 'Ocultar archivos' : 'Archivos'}
                       </button>
+                      <button
+                        onClick={() => setTareaComentariosAbierta((v) => (v === t.id ? null : t.id))}
+                        className="text-gray-600 text-xs font-bold hover:underline"
+                      >
+                        {tareaComentariosAbierta === t.id ? 'Ocultar comentarios' : 'Comentarios'}
+                      </button>
                       {puedeGestionar && (
                         <>
                           <button
@@ -776,6 +977,16 @@ export default function ProyectoDetalle() {
                     </td>
                   </tr>
                 )}
+                {tareaComentariosAbierta === t.id && (
+                  <tr className="border-t border-gray-100 bg-gray-50">
+                    <td colSpan={numColumnas} className="px-5 py-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-2">
+                        Comentarios de "{t.nombre}"
+                      </p>
+                      <PanelComentarios tareaId={t.id} puedeGestionar={puedeGestionar} />
+                    </td>
+                  </tr>
+                )}
               </Fragment>
             ))}
             {tareas.length === 0 && (
@@ -788,6 +999,7 @@ export default function ProyectoDetalle() {
           </tbody>
         </table>
       </div>
+      )}
     </Layout>
   );
 }
