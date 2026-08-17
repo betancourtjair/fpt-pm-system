@@ -165,3 +165,46 @@ roadmap completo con las 6 fases está en el PID, sección 7.
 - Todas las cuentas cargadas por seed tienen `must_change_password = true`:
   confirma que cada persona cambie su contraseña en su primer login antes de
   empezar a usar el sistema.
+
+## 6. Respaldos y monitoreo
+
+**Respaldo automático diario.** `.github/workflows/backup-db.yml` corre todos
+los días a las 9am UTC (además de poder lanzarse a mano desde la pestaña
+Actions → "Respaldo diario de la base de datos" → "Run workflow") y sube un
+dump completo de la base de datos de Supabase como artifact de GitHub Actions,
+con 90 días de retención (el máximo disponible). Para que funcione hace falta
+un secreto de repositorio:
+
+1. En Supabase: Project Settings → Database → Connection string → copia la de
+   modo "Session" (puerto 5432), con el password real incluido.
+2. En GitHub: Settings del repo → Secrets and variables → Actions → "New
+   repository secret" → nombre `SUPABASE_DATABASE_URL`, valor la cadena del
+   paso anterior.
+
+Para restaurar un respaldo (por ejemplo tras un error en producción): descarga
+el artifact desde la pestaña Actions del run que quieras, y localmente:
+
+```bash
+pg_restore --clean --if-exists --no-owner --no-privileges \
+  -d "postgresql://usuario:password@host:puerto/nombre_bd" \
+  respaldo-fpt-pm-YYYY-MM-DD.dump
+```
+
+Esto no es un respaldo *point-in-time* (solo captura el estado del momento en
+que corrió), pero cubre el caso más común: recuperar el estado de un día
+anterior si algo sale mal.
+
+**Monitoreo de disponibilidad (uptime).** No forma parte del código — se
+configura una sola vez en una herramienta externa gratuita como
+[UptimeRobot](https://uptimerobot.com):
+
+1. Crea una cuenta gratuita (plan Free: hasta 50 monitores, revisión cada 5
+   minutos).
+2. Agrega un monitor tipo "HTTP(s)" apuntando a `https://<tu-backend>.onrender.com/health`
+   — este endpoint ya existe y no cuenta contra el límite de peticiones (ver
+   `@SkipThrottle()` en `health.controller.ts`).
+3. Agrega un segundo monitor para la URL del frontend en Netlify.
+4. En "Alert Contacts" agrega tu correo (o un número de WhatsApp/Telegram si
+   prefieres) para que te avisen apenas alguno de los dos deje de responder —
+   esto es lo que hoy falta: sin esto, un caído de Render o Netlify solo se
+   nota cuando alguien del equipo intenta entrar y no puede.

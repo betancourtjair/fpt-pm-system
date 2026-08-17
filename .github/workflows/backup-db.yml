@@ -1,0 +1,48 @@
+name: Respaldo diario de la base de datos
+
+# Mejora de infraestructura (prioridad 6 de la lista): Supabase en el plan
+# gratuito no incluye respaldos automáticos con retención larga — este
+# workflow corre todos los días y genera un dump completo de la base de
+# datos de producción, guardado como artifact de GitHub Actions (retención
+# de 90 días, el máximo disponible). No sustituye un respaldo point-in-time
+# de verdad, pero cubre el caso más común: poder recuperar el estado de
+# ayer si algo sale mal (un DELETE o UPDATE equivocado, una migración con
+# error, etc.).
+#
+# Requiere un secreto de repositorio llamado SUPABASE_DATABASE_URL con la
+# cadena de conexión de Supabase (Settings → Database → Connection string,
+# modo "Session" o "Transaction", con el password real incluido). Se
+# configura en GitHub: Settings del repo → Secrets and variables → Actions
+# → New repository secret. Nunca se debe poner esa cadena directamente en
+# este archivo.
+on:
+  schedule:
+    # 9:00am UTC ~ madrugada/mañana en México — después de la actividad
+    # normal del día anterior, antes de que empiece el uso del día.
+    - cron: '0 9 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente de Postgres
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+
+      - name: Generar respaldo (pg_dump, formato comprimido)
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Falta el secreto SUPABASE_DATABASE_URL en la configuración del repositorio." >&2
+            exit 1
+          fi
+          fecha=$(date +%Y-%m-%d)
+          pg_dump "$DATABASE_URL" --no-owner --no-privileges --format=custom --file="respaldo-fpt-pm-$fecha.dump"
+
+      - name: Subir respaldo como artifact (retención 90 días)
+        uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-bd-${{ github.run_id }}
+          path: respaldo-fpt-pm-*.dump
+          retention-days: 90
