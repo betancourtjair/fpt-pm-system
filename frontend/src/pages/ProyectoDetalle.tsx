@@ -1,7 +1,17 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { getUsuario, proyectosApi, tareasApi, usuariosApi, Proyecto, Tarea } from '../lib/api';
+import PanelArchivos from '../components/PanelArchivos';
+import {
+  descargarBlob,
+  getUsuario,
+  proyectosApi,
+  tareasApi,
+  usuariosApi,
+  Gasto,
+  Proyecto,
+  Tarea,
+} from '../lib/api';
 
 const ESTATUS_TAREA = ['no_iniciada', 'en_progreso', 'completada', 'bloqueada'];
 const ESTATUS_LABEL: Record<string, string> = {
@@ -59,15 +69,91 @@ export default function ProyectoDetalle() {
   const [avanceEstatus, setAvanceEstatus] = useState('');
   const [avancePorcentaje, setAvancePorcentaje] = useState(0);
 
+  // Presupuesto real vs. plan (prioridad 8) — bitácora de gastos reales,
+  // visible solo para quien ya puede ver `presupuesto` (misma regla que el
+  // backend aplica en ProyectosService.verificarPuedeVerPresupuesto).
+  const [gastos, setGastos] = useState<Gasto[]>([]);
+  const [mostrarFormGasto, setMostrarFormGasto] = useState(false);
+  const [gastoConcepto, setGastoConcepto] = useState('');
+  const [gastoMonto, setGastoMonto] = useState('');
+  const [gastoFecha, setGastoFecha] = useState('');
+  const [guardandoGasto, setGuardandoGasto] = useState(false);
+  const [errorGasto, setErrorGasto] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
+  const [errorExportar, setErrorExportar] = useState<string | null>(null);
+
+  // Adjuntar archivos a una tarea (prioridad 11) — panel expandible bajo la
+  // fila de la tarea, una a la vez, para no saturar la tabla por default.
+  const [tareaArchivosAbierta, setTareaArchivosAbierta] = useState<number | null>(null);
+
+  // Reasignación masiva de responsable (prioridad 11, segunda mitad) — solo
+  // quien puede administrar el proyecto ve la columna de selección.
+  const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
+  const [nuevoResponsableId, setNuevoResponsableId] = useState('');
+  const [reasignando, setReasignando] = useState(false);
+  const [errorReasignar, setErrorReasignar] = useState<string | null>(null);
+
+  async function exportarExcel() {
+    setExportando(true);
+    setErrorExportar(null);
+    try {
+      const blob = await tareasApi.exportarExcel(proyectoId);
+      descargarBlob(blob, `Tareas_${proyecto?.nombre ?? proyectoId}.xlsx`);
+    } catch {
+      setErrorExportar('No se pudo generar el archivo de Excel.');
+    } finally {
+      setExportando(false);
+    }
+  }
+
   function cargarTodo() {
     setLoading(true);
     Promise.all([proyectosApi.obtener(proyectoId), tareasApi.listarDeProyecto(proyectoId)])
       .then(([p, t]) => {
         setProyecto(p);
         setTareas(t);
+        // Descarta de la selección cualquier tarea que ya no exista (borrada
+        // por otra pestaña/usuario) para no mandar un id fantasma al reasignar.
+        const idsVigentes = new Set(t.map((x) => x.id));
+        setSeleccionadas((prev) => prev.filter((id) => idsVigentes.has(id)));
+        if ('presupuesto' in p) {
+          proyectosApi.gastos(proyectoId).then(setGastos).catch(() => {});
+        }
       })
       .catch(() => setError('No se pudo cargar el proyecto (puede estar fuera de tu alcance).'))
       .finally(() => setLoading(false));
+  }
+
+  async function agregarGasto(e: FormEvent) {
+    e.preventDefault();
+    setErrorGasto(null);
+    setGuardandoGasto(true);
+    try {
+      const actualizados = await proyectosApi.crearGasto(proyectoId, {
+        concepto: gastoConcepto,
+        monto: Number(gastoMonto),
+        fecha: gastoFecha,
+      });
+      setGastos(actualizados);
+      setGastoConcepto('');
+      setGastoMonto('');
+      setGastoFecha('');
+      setMostrarFormGasto(false);
+      // El total (proyecto.gastoTotal) vive en el objeto proyecto — hay que
+      // refrescarlo para que la barra de comparación quede al día.
+      proyectosApi.obtener(proyectoId).then(setProyecto).catch(() => {});
+    } catch (err: any) {
+      setErrorGasto(err?.response?.data?.message || 'No se pudo registrar el gasto.');
+    } finally {
+      setGuardandoGasto(false);
+    }
+  }
+
+  async function eliminarGasto(g: Gasto) {
+    if (!confirm(`¿Eliminar el gasto "${g.concepto}"?`)) return;
+    const actualizados = await proyectosApi.eliminarGasto(proyectoId, g.id);
+    setGastos(actualizados);
+    proyectosApi.obtener(proyectoId).then(setProyecto).catch(() => {});
   }
 
   useEffect(() => {
@@ -174,6 +260,37 @@ export default function ProyectoDetalle() {
     [tareas, modo],
   );
 
+  // La columna de checkboxes solo existe cuando puedeGestionar — el colSpan
+  // de las filas "de ancho completo" (panel de archivos, tabla vacía) debe
+  // seguirla para no dejar una columna huérfana sin cubrir.
+  const numColumnas = puedeGestionar ? 8 : 7;
+
+  function toggleSeleccion(tareaId: number) {
+    setSeleccionadas((prev) =>
+      prev.includes(tareaId) ? prev.filter((id) => id !== tareaId) : [...prev, tareaId],
+    );
+  }
+
+  function toggleSeleccionarTodas() {
+    setSeleccionadas((prev) => (prev.length === tareas.length ? [] : tareas.map((t) => t.id)));
+  }
+
+  async function reasignarSeleccionadas() {
+    if (!nuevoResponsableId || seleccionadas.length === 0) return;
+    setErrorReasignar(null);
+    setReasignando(true);
+    try {
+      await tareasApi.reasignarMasivo(proyectoId, seleccionadas, Number(nuevoResponsableId));
+      setSeleccionadas([]);
+      setNuevoResponsableId('');
+      cargarTodo();
+    } catch (err: any) {
+      setErrorReasignar(err?.response?.data?.message || 'No se pudo reasignar las tareas seleccionadas.');
+    } finally {
+      setReasignando(false);
+    }
+  }
+
   if (loading) {
     return (
       <Layout activo="proyectos">
@@ -192,9 +309,9 @@ export default function ProyectoDetalle() {
 
   return (
     <Layout activo="proyectos">
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <h1 className="font-display font-extrabold text-2xl text-primary-900">{proyecto.nombre}</h1>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-2">
+        <div className="min-w-0">
+          <h1 className="font-display font-extrabold text-2xl text-primary-900 break-words">{proyecto.nombre}</h1>
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
             {proyecto.areas.map((a) => (
               <span
@@ -209,8 +326,16 @@ export default function ProyectoDetalle() {
           <p className="text-gray-500 text-sm mt-1.5">
             {proyecto.fechaInicio} → {proyecto.fechaFin} · Responsable: {proyecto.responsable?.nombre ?? '—'}
           </p>
+          {errorExportar && <p className="text-danger-500 text-xs font-medium mt-1">{errorExportar}</p>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={exportarExcel}
+            disabled={exportando}
+            className="bg-white border border-primary-200 hover:bg-primary-50 text-primary-800 font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {exportando ? 'Generando…' : '⬇ Exportar tareas'}
+          </button>
           {puedeGestionar && (
             <button
               onClick={abrirNueva}
@@ -229,12 +354,135 @@ export default function ProyectoDetalle() {
           )}
         </div>
       </div>
-      {'presupuesto' in proyecto && (
-        <p className="text-sm font-semibold text-primary-700 mb-6">
-          Presupuesto: ${Number(proyecto.presupuesto).toLocaleString('es-MX')}
-        </p>
+      {'presupuesto' in proyecto ? (
+        <div className="bg-white rounded-2xl shadow-card p-5 mb-6">
+          {(() => {
+            const plan = Number(proyecto.presupuesto);
+            const real = Number(proyecto.gastoTotal ?? 0);
+            const porcentaje = plan > 0 ? Math.min(100, Math.round((real / plan) * 100)) : 0;
+            const excedido = real > plan;
+            return (
+              <>
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                  <h2 className="font-display font-bold text-base text-primary-900">
+                    Presupuesto vs. gasto real
+                  </h2>
+                  {puedeGestionar && (
+                    <button
+                      onClick={() => setMostrarFormGasto((v) => !v)}
+                      className="text-sm font-bold text-primary-600 hover:text-primary-800"
+                    >
+                      {mostrarFormGasto ? 'Cancelar' : '+ Registrar gasto'}
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-baseline gap-3 text-sm mb-1.5">
+                  <span className="font-semibold text-gray-700">
+                    Gastado: ${real.toLocaleString('es-MX')}
+                  </span>
+                  <span className="text-gray-400">de ${plan.toLocaleString('es-MX')} planeado</span>
+                  {excedido && (
+                    <span className="text-xs font-bold uppercase text-danger-500 bg-danger-500/10 px-2 py-0.5 rounded-full">
+                      Presupuesto excedido
+                    </span>
+                  )}
+                </div>
+                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-2.5 rounded-full ${excedido ? 'bg-danger-500' : 'bg-accent-500'}`}
+                    style={{ width: `${porcentaje}%` }}
+                  />
+                </div>
+
+                {mostrarFormGasto && (
+                  <form onSubmit={agregarGasto} className="grid grid-cols-3 gap-3 mt-4 items-end">
+                    <div className="col-span-3 sm:col-span-1">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Concepto</label>
+                      <input
+                        required
+                        minLength={3}
+                        value={gastoConcepto}
+                        onChange={(e) => setGastoConcepto(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Monto (MXN)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0.01}
+                        step="0.01"
+                        value={gastoMonto}
+                        onChange={(e) => setGastoMonto(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        required
+                        value={gastoFecha}
+                        onChange={(e) => setGastoFecha(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      {errorGasto && (
+                        <p className="text-danger-500 text-xs font-medium mb-2">{errorGasto}</p>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={guardandoGasto}
+                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-60"
+                      >
+                        {guardandoGasto ? 'Guardando…' : 'Guardar gasto'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {gastos.length > 0 && (
+                  <div className="mt-4 border-t border-gray-100 pt-3">
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {gastos.map((g) => (
+                          <tr key={g.id} className="border-t border-gray-50 first:border-t-0">
+                            <td className="py-1.5 pr-3 text-gray-500 whitespace-nowrap">{g.fecha}</td>
+                            <td className="py-1.5 pr-3 text-gray-700">{g.concepto}</td>
+                            <td className="py-1.5 pr-3 font-semibold text-gray-800 whitespace-nowrap">
+                              ${g.monto.toLocaleString('es-MX')}
+                            </td>
+                            <td className="py-1.5 text-gray-400">{g.creador?.nombre ?? '—'}</td>
+                            {puedeGestionar && (
+                              <td className="py-1.5 text-right">
+                                <button
+                                  onClick={() => eliminarGasto(g)}
+                                  className="text-danger-500 font-bold hover:underline"
+                                >
+                                  Eliminar
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      ) : (
+        <div className="mb-6" />
       )}
-      {!('presupuesto' in proyecto) && <div className="mb-6" />}
+
+      <div className="bg-white rounded-2xl shadow-card p-5 mb-6">
+        <h2 className="font-display font-bold text-base text-primary-900 mb-3">Archivos del proyecto</h2>
+        <PanelArchivos dueño={{ proyectoId }} puedeGestionar={puedeGestionar} />
+      </div>
 
       {(modo === 'nueva' || typeof modo === 'number') && (
         <form onSubmit={guardar} className="bg-white rounded-2xl shadow-card p-6 mb-6 space-y-4">
@@ -356,10 +604,53 @@ export default function ProyectoDetalle() {
         </form>
       )}
 
-      <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-        <table className="w-full text-sm">
+      {puedeGestionar && seleccionadas.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-bold text-primary-800">
+            {seleccionadas.length} {seleccionadas.length === 1 ? 'tarea seleccionada' : 'tareas seleccionadas'}
+          </span>
+          <select
+            value={nuevoResponsableId}
+            onChange={(e) => setNuevoResponsableId(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
+          >
+            <option value="">Reasignar a…</option>
+            {usuarios.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nombre}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={reasignarSeleccionadas}
+            disabled={!nuevoResponsableId || reasignando}
+            className="bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-lg px-4 py-1.5 text-sm disabled:opacity-60"
+          >
+            {reasignando ? 'Reasignando…' : 'Reasignar'}
+          </button>
+          <button
+            onClick={() => setSeleccionadas([])}
+            className="text-gray-500 text-sm font-semibold hover:underline"
+          >
+            Cancelar selección
+          </button>
+          {errorReasignar && <p className="text-danger-500 text-xs font-medium w-full">{errorReasignar}</p>}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-card overflow-x-auto">
+        <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-primary-50 text-primary-800 text-left">
             <tr>
+              {puedeGestionar && (
+                <th className="px-5 py-3 font-bold w-8">
+                  <input
+                    type="checkbox"
+                    checked={tareas.length > 0 && seleccionadas.length === tareas.length}
+                    onChange={toggleSeleccionarTodas}
+                  />
+                </th>
+              )}
               <th className="px-5 py-3 font-bold">Tarea</th>
               <th className="px-5 py-3 font-bold">Fechas</th>
               <th className="px-5 py-3 font-bold">Responsable</th>
@@ -371,98 +662,125 @@ export default function ProyectoDetalle() {
           </thead>
           <tbody>
             {tareas.map((t) => (
-              <tr key={t.id} className="border-t border-gray-100 align-top">
-                <td className="px-5 py-3 font-semibold text-primary-800">{t.nombre}</td>
-                <td className="px-5 py-3 text-gray-500">
-                  {t.fechaInicio} → {t.fechaFin}
-                </td>
-                <td className="px-5 py-3 text-gray-600">{t.responsable?.nombre ?? '—'}</td>
-                <td className="px-5 py-3 text-gray-600">
-                  {t.usuariosAsignados.map((u) => u.nombre).join(', ') || '—'}
-                </td>
-                <td className="px-5 py-3 text-gray-500">{t.dependencia?.nombre ?? '—'}</td>
-                <td className="px-5 py-3">
-                  {avanceEditando === t.id ? (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={avanceEstatus}
-                        onChange={(e) => setAvanceEstatus(e.target.value)}
-                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs"
-                      >
-                        {ESTATUS_TAREA.map((s) => (
-                          <option key={s} value={s}>
-                            {ESTATUS_LABEL[s]}
-                          </option>
-                        ))}
-                      </select>
+              <Fragment key={t.id}>
+                <tr className="border-t border-gray-100 align-top">
+                  {puedeGestionar && (
+                    <td className="px-5 py-3">
                       <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={avancePorcentaje}
-                        onChange={(e) => setAvancePorcentaje(Number(e.target.value))}
-                        className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs"
+                        type="checkbox"
+                        checked={seleccionadas.includes(t.id)}
+                        onChange={() => toggleSeleccion(t.id)}
                       />
-                      <button
-                        onClick={() => guardarAvance(t)}
-                        className="text-primary-700 font-bold text-xs hover:underline"
-                      >
-                        Guardar
-                      </button>
-                      <button
-                        onClick={() => setAvanceEditando(null)}
-                        className="text-gray-400 text-xs hover:underline"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-xs font-bold uppercase text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
-                        {ESTATUS_LABEL[t.estatus] ?? t.estatus}
-                      </span>
-                      <div className="w-32 h-1.5 bg-gray-100 rounded-full mt-1.5">
-                        <div
-                          className="h-1.5 bg-accent-500 rounded-full"
-                          style={{ width: `${t.porcentajeAvance}%` }}
-                        />
-                      </div>
-                    </div>
+                    </td>
                   )}
-                </td>
-                <td className="px-5 py-3 whitespace-nowrap">
-                  <div className="flex gap-3">
-                    {(puedeGestionar || esAsignado(t)) && avanceEditando !== t.id && (
+                  <td className="px-5 py-3 font-semibold text-primary-800">{t.nombre}</td>
+                  <td className="px-5 py-3 text-gray-500">
+                    {t.fechaInicio} → {t.fechaFin}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600">{t.responsable?.nombre ?? '—'}</td>
+                  <td className="px-5 py-3 text-gray-600">
+                    {t.usuariosAsignados.map((u) => u.nombre).join(', ') || '—'}
+                  </td>
+                  <td className="px-5 py-3 text-gray-500">{t.dependencia?.nombre ?? '—'}</td>
+                  <td className="px-5 py-3">
+                    {avanceEditando === t.id ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={avanceEstatus}
+                          onChange={(e) => setAvanceEstatus(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-2 py-1 text-xs"
+                        >
+                          {ESTATUS_TAREA.map((s) => (
+                            <option key={s} value={s}>
+                              {ESTATUS_LABEL[s]}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={avancePorcentaje}
+                          onChange={(e) => setAvancePorcentaje(Number(e.target.value))}
+                          className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs"
+                        />
+                        <button
+                          onClick={() => guardarAvance(t)}
+                          className="text-primary-700 font-bold text-xs hover:underline"
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => setAvanceEditando(null)}
+                          className="text-gray-400 text-xs hover:underline"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xs font-bold uppercase text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
+                          {ESTATUS_LABEL[t.estatus] ?? t.estatus}
+                        </span>
+                        <div className="w-32 h-1.5 bg-gray-100 rounded-full mt-1.5">
+                          <div
+                            className="h-1.5 bg-accent-500 rounded-full"
+                            style={{ width: `${t.porcentajeAvance}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap">
+                    <div className="flex gap-3">
+                      {(puedeGestionar || esAsignado(t)) && avanceEditando !== t.id && (
+                        <button
+                          onClick={() => abrirAvance(t)}
+                          className="text-primary-700 text-xs font-bold hover:underline"
+                        >
+                          Avance
+                        </button>
+                      )}
                       <button
-                        onClick={() => abrirAvance(t)}
-                        className="text-primary-700 text-xs font-bold hover:underline"
+                        onClick={() => setTareaArchivosAbierta((v) => (v === t.id ? null : t.id))}
+                        className="text-gray-600 text-xs font-bold hover:underline"
                       >
-                        Avance
+                        {tareaArchivosAbierta === t.id ? 'Ocultar archivos' : 'Archivos'}
                       </button>
-                    )}
-                    {puedeGestionar && (
-                      <>
-                        <button
-                          onClick={() => abrirEdicion(t)}
-                          className="text-gray-600 text-xs font-bold hover:underline"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => eliminarTarea(t)}
-                          className="text-danger-500 text-xs font-bold hover:underline"
-                        >
-                          Eliminar
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
+                      {puedeGestionar && (
+                        <>
+                          <button
+                            onClick={() => abrirEdicion(t)}
+                            className="text-gray-600 text-xs font-bold hover:underline"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => eliminarTarea(t)}
+                            className="text-danger-500 text-xs font-bold hover:underline"
+                          >
+                            Eliminar
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+                {tareaArchivosAbierta === t.id && (
+                  <tr className="border-t border-gray-100 bg-gray-50">
+                    <td colSpan={numColumnas} className="px-5 py-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-2">
+                        Archivos de "{t.nombre}"
+                      </p>
+                      <PanelArchivos dueño={{ tareaId: t.id }} puedeGestionar={puedeGestionar} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
             {tareas.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-gray-400">
+                <td colSpan={numColumnas} className="px-5 py-8 text-center text-gray-400">
                   Este proyecto todavía no tiene tareas.
                 </td>
               </tr>

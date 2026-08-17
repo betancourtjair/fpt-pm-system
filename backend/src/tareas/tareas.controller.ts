@@ -7,14 +7,17 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/auth.service';
 import { TareasService } from './tareas.service';
 import { CreateTareaDto } from './dto/create-tarea.dto';
 import { UpdateTareaDto, ActualizarAvanceDto } from './dto/update-tarea.dto';
+import { ReasignarMasivoDto } from './dto/reasignar-masivo.dto';
 
 // Sin prefijo de clase: las tareas se listan/crean anidadas bajo su
 // proyecto (/proyectos/:proyectoId/tareas) pero se leen/editan/eliminan por
@@ -36,6 +39,34 @@ export class TareasController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.tareas.crear(proyectoId, dto, user);
+  }
+
+  @Get('proyectos/:proyectoId/tareas/exportar-excel')
+  async exportarExcel(
+    @Param('proyectoId', ParseIntPipe) proyectoId: number,
+    @CurrentUser() user: JwtPayload,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.tareas.exportarExcel(proyectoId, user);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="Tareas_FPT.xlsx"',
+    });
+    res.send(buffer);
+  }
+
+  // IMPORTANTE: va ANTES de "proyectos/:proyectoId/tareas/exportar-excel" no
+  // hace falta (distinto segmento literal, "reasignar-masivo" vs
+  // "exportar-excel", ninguno es prefijo del otro) — pero si algún día se
+  // agrega "proyectos/:proyectoId/tareas/:algo" genérico, esta debe seguir
+  // yendo antes de esa ruta por el mismo motivo que "exportar-excel".
+  @Patch('proyectos/:proyectoId/tareas/reasignar-masivo')
+  reasignarMasivo(
+    @Param('proyectoId', ParseIntPipe) proyectoId: number,
+    @Body() dto: ReasignarMasivoDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.tareas.reasignarMasivo(proyectoId, dto, user);
   }
 
   @Get('tareas/:id')

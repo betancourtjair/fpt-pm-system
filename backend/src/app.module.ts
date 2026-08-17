@@ -14,6 +14,7 @@ import { TareasModule } from './tareas/tareas.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { ArchivosModule } from './archivos/archivos.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     AlertasModule,
     NotificacionesModule,
     RealtimeModule,
+    ArchivosModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

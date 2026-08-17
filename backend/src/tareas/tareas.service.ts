@@ -13,8 +13,10 @@ import { JwtPayload } from '../auth/auth.service';
 import { ProyectosService } from '../proyectos/proyectos.service';
 import { CreateTareaDto } from './dto/create-tarea.dto';
 import { UpdateTareaDto, ActualizarAvanceDto } from './dto/update-tarea.dto';
+import { ReasignarMasivoDto } from './dto/reasignar-masivo.dto';
 import { puedeVerPresupuesto } from '../common/permisos.util';
 import { AlertasService } from '../alertas/alertas.service';
+import { generarExcelTareas } from '../common/excel-export.util';
 
 const RELACIONES = {
   proyecto: true,
@@ -113,6 +115,29 @@ export class TareasService {
     }
     const autorizado = await this.proyectos.autorizacionPresupuesto(user);
     return this.serializar(tarea, user, autorizado);
+  }
+
+  // Exportar a Excel (prioridad 9) — reutiliza listar(), mismo alcance y
+  // misma regla de visibilidad de presupuesto que la pantalla de detalle
+  // del proyecto.
+  async exportarExcel(proyectoId: number, user: JwtPayload): Promise<Buffer> {
+    const proyecto = await this.proyectos.obtenerEntidad(proyectoId);
+    if (!(await this.proyectos.puedeVer(proyecto, user))) {
+      throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
+    }
+    const tareas = await this.listar(proyectoId, user);
+    const filas = tareas.map((t: any) => ({
+      nombre: t.nombre,
+      fechaInicio: t.fechaInicio,
+      fechaFin: t.fechaFin,
+      responsable: t.responsable?.nombre ?? '—',
+      asignados: (t.usuariosAsignados ?? []).map((u: any) => u.nombre).join(', ') || '—',
+      dependeDe: t.dependencia?.nombre ?? '—',
+      estatus: t.estatus,
+      porcentajeAvance: t.porcentajeAvance,
+      presupuesto: t.presupuesto,
+    }));
+    return generarExcelTareas(proyecto.nombre, filas);
   }
 
   private async validarUsuarios(usuarioIds: number[]) {
@@ -316,6 +341,36 @@ export class TareasService {
     await this.tareas.save(tarea);
     this.emitirCambio(tarea.proyectoId, id, 'actualizada');
     return this.obtener(id, user);
+  }
+
+  // Reasignación masiva de responsable (prioridad 11, segunda mitad): la
+  // pantalla ofrece esto sobre un solo proyecto a la vez, así que se exige
+  // que TODAS las tareaIds pertenezcan a `proyectoId` — evita que alguien
+  // cuele el id de una tarea de otro proyecto fuera de su alcance en el
+  // mismo request. Reutiliza `actualizar()` tarea por tarea para no duplicar
+  // ninguna de sus validaciones (existencia del responsable, permisos,
+  // notificación de asignación, evento de tiempo real).
+  async reasignarMasivo(proyectoId: number, dto: ReasignarMasivoDto, user: JwtPayload) {
+    const proyecto = await this.proyectos.obtenerEntidad(proyectoId);
+    this.proyectos.verificarPuedeGestionar(proyecto, user);
+
+    const responsable = await this.usuarios.findOne({ where: { id: dto.responsableId } });
+    if (!responsable) throw new NotFoundException('El responsable indicado no existe.');
+
+    const idsUnicos = [...new Set(dto.tareaIds)];
+    const tareas = await this.tareas.find({ where: { id: In(idsUnicos) } });
+    if (tareas.length !== idsUnicos.length) {
+      throw new NotFoundException('Una o más tareas seleccionadas no existen.');
+    }
+    const fueraDeProyecto = tareas.some((t) => t.proyectoId !== proyectoId);
+    if (fueraDeProyecto) {
+      throw new BadRequestException('Todas las tareas seleccionadas deben pertenecer a este proyecto.');
+    }
+
+    for (const id of idsUnicos) {
+      await this.actualizar(id, { responsableId: dto.responsableId }, user);
+    }
+    return this.listar(proyectoId, user);
   }
 
   async eliminar(id: number, user: JwtPayload) {

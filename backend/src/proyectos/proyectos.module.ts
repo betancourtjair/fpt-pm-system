@@ -6,9 +6,10 @@ import { Proyecto } from '../entities/proyecto.entity';
 import { Area } from '../entities/area.entity';
 import { Usuario } from '../entities/usuario.entity';
 import { Direccion } from '../entities/direccion.entity';
+import { GastoProyecto } from '../entities/gasto-proyecto.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Proyecto, Area, Usuario, Direccion])],
+  imports: [TypeOrmModule.forFeature([Proyecto, Area, Usuario, Direccion, GastoProyecto])],
   controllers: [ProyectosController],
   providers: [ProyectosService],
   // TareasModule reutiliza puedeVer/verificarPuedeGestionar para no duplicar

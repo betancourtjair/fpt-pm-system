@@ -28,3 +28,7 @@ services:
         value: "Notificaciones FPT <notificaciones@fpt.com.mx>"
       - key: FRONTEND_URL
         sync: false   # URL pública del frontend en Netlify, ej. https://tu-sitio.netlify.app — se usa en el botón de los correos de alerta
+      - key: SUPABASE_URL
+        sync: false   # Adjuntos (Storage) — mismo proyecto de Supabase que ya usas para DATABASE_URL. Settings → API → "Project URL". Vacío = adjuntar archivos responde 500, el resto del sistema sigue normal.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false   # Settings → API → "service_role" (NO la "anon public" — esa no puede escribir en un bucket privado)

@@ -76,7 +76,12 @@ Orden recomendado — cada paso depende del anterior:
    → Render detecta `render.yaml`. Completa las variables marcadas como
    secretas en el dashboard: `DATABASE_URL` (la de Supabase), `CORS_ORIGIN`
    (la URL que te dé Netlify en el paso siguiente — puedes dejarla vacía y
-   volver a este paso después), `RESEND_API_KEY`.
+   volver a este paso después), `RESEND_API_KEY`, y `SUPABASE_URL` +
+   `SUPABASE_SERVICE_ROLE_KEY` (adjuntar archivos a proyectos/tareas —
+   mismo proyecto de Supabase del paso 1, ambos valores están en Settings →
+   API; usa la key "service_role", nunca la "anon public". Si se dejan
+   vacías, el resto del sistema sigue funcionando normal y solo la función
+   de adjuntos responde error).
 5. **Netlify** (frontend): Add new site → Import an existing project →
    conecta el mismo repositorio → Netlify detecta `netlify.toml`. Agrega la
    variable de entorno `VITE_API_URL` con la URL que te dio Render en el
@@ -150,11 +155,45 @@ Resend/SES. Usarlo como remitente hace que Resend rechace el correo con
 "domain is not verified" (nos pasó en producción y quedó documentado en
 `email.service.ts`).
 
-No incluye todavía (Fase 3 en adelante del roadmap): edición drag-and-drop de
-fechas/dependencias en el Gantt, filtros avanzados, dashboards de presupuesto
-vs. avance, permisos granulares adicionales, ni hardening de seguridad más
-allá de lo ya implementado (JWT, RBAC, cambio de contraseña obligatorio). El
-roadmap completo con las 6 fases está en el PID, sección 7.
+**Mejoras funcionales completadas después de la Fase 2** (ronda de 12 puntos
+priorizados):
+
+1. Alertas de tareas vencidas (además de los recordatorios de 48h/24h).
+2. Validación de fechas y dependencias al crear/editar una tarea (fecha de
+   inicio posterior a fin, dependencia circular directa o en cadena, tarea
+   que inicia antes de que termine su predecesora).
+3. Integración continua (GitHub Actions): cada push/PR a `main` compila
+   backend y frontend — sin esto no se detecta un error de tipos hasta que
+   Render/Netlify fallan el deploy.
+4. Respaldo automático diario de la base de datos + guía de monitoreo con
+   UptimeRobot (gratuito) — ver sección 6 de este README.
+5. Búsqueda y filtros en "Proyectos" (nombre, Dirección, estatus) y en
+   "Gestión de usuarios" (nombre/correo, rol, activo/inactivo).
+6. Presupuesto real vs. plan: bitácora de gastos por proyecto
+   (`gastos_proyecto`) con barra de progreso y aviso de presupuesto
+   excedido, respetando la misma visibilidad que ya tenía `presupuesto`.
+7. Exportar a Excel tanto la lista de Proyectos como las Tareas de un
+   proyecto (mismo estilo visual que la plantilla de usuarios).
+8. Edición por arrastrar y soltar en el Gantt (mover una tarea completa o
+   alargar/acortar su duración desde el borde), con una ventana de
+   confirmación que muestra fecha "antes" y "después" antes de guardar
+   nada — cancelar no manda ningún cambio al servidor.
+9. Adjuntar archivos a proyectos y tareas (Supabase Storage, bucket
+   privado, siempre a través de un endpoint propio autenticado — ver
+   variables `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` en la sección 2) y
+   reasignación masiva de responsable (selecciona varias tareas en la
+   tabla de un proyecto y reasígnalas de un solo golpe).
+10. Auditoría y ajustes de vista móvil: menú lateral como cajón deslizable
+    en pantallas angostas, encabezados que ya no se encimaban con los
+    botones de acción, y tablas/el Gantt con desplazamiento horizontal
+    dentro de su propia tarjeta en vez de cortarse. El arrastrar-y-soltar
+    del Gantt sigue siendo solo de escritorio (depende de eventos de
+    mouse) — en celular el Gantt es de solo lectura.
+
+No incluye todavía: permisos granulares adicionales más allá de los roles
+actuales, ni hardening de seguridad más allá de lo ya implementado (JWT,
+RBAC, cambio de contraseña obligatorio, límite de peticiones por IP). El
+roadmap completo con las 6 fases originales está en el PID, sección 7.
 
 ## 5. Seguridad — antes de invitar usuarios reales
 

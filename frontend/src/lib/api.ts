@@ -11,6 +11,20 @@ export function getToken() {
   return localStorage.getItem('fpt_token');
 }
 
+// Compartido por todas las descargas de Excel (plantilla de usuarios,
+// exportar Proyectos/Tareas — prioridad 9) para no repetir el mismo
+// boilerplate de URL de objeto + <a> temporal en cada pantalla.
+export function descargarBlob(blob: Blob, nombreArchivo: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // SESION_MAX_MS respalda, del lado del cliente, el cierre automático de
 // sesión cada 3 horas (ver Layout.tsx) — independiente de JWT_EXPIRES_IN
 // en el backend, que es la misma ventana pero validada en el servidor.
@@ -80,9 +94,20 @@ export type Proyecto = {
   fechaFin: string;
   estatus: string;
   presupuesto?: number;
+  // Solo viaja junto con `presupuesto` (misma regla de visibilidad) — suma
+  // de gastos_proyecto, ver ProyectosService.mapaGastosPorProyecto.
+  gastoTotal?: number;
   responsable: UsuarioResumen | null;
   creador: UsuarioResumen | null;
   areas: AreaConColor[];
+};
+
+export type Gasto = {
+  id: number;
+  concepto: string;
+  monto: number;
+  fecha: string;
+  creador: UsuarioResumen | null;
 };
 
 export type Tarea = {
@@ -107,6 +132,16 @@ export const proyectosApi = {
   actualizar: (id: number, dto: Record<string, unknown>) =>
     api.patch<Proyecto>(`/proyectos/${id}`, dto).then((r) => r.data),
   eliminar: (id: number) => api.delete(`/proyectos/${id}`).then((r) => r.data),
+  // Presupuesto real vs. plan (prioridad 8) — bitácora de gastos reales.
+  gastos: (proyectoId: number) => api.get<Gasto[]>(`/proyectos/${proyectoId}/gastos`).then((r) => r.data),
+  crearGasto: (proyectoId: number, dto: { concepto: string; monto: number; fecha: string }) =>
+    api.post<Gasto[]>(`/proyectos/${proyectoId}/gastos`, dto).then((r) => r.data),
+  eliminarGasto: (proyectoId: number, gastoId: number) =>
+    api.delete<Gasto[]>(`/proyectos/${proyectoId}/gastos/${gastoId}`).then((r) => r.data),
+  // Exportar a Excel (prioridad 9) — mismo alcance/visibilidad que la
+  // pantalla, el backend nunca exporta un dato que el usuario no vería ya.
+  exportarExcel: () =>
+    api.get('/proyectos/exportar-excel', { responseType: 'blob' }).then((r) => r.data as Blob),
 };
 
 export const tareasApi = {
@@ -120,6 +155,48 @@ export const tareasApi = {
   actualizarAvance: (id: number, dto: { estatus?: string; porcentajeAvance?: number }) =>
     api.patch<Tarea>(`/tareas/${id}/avance`, dto).then((r) => r.data),
   eliminar: (id: number) => api.delete(`/tareas/${id}`).then((r) => r.data),
+  exportarExcel: (proyectoId: number) =>
+    api
+      .get(`/proyectos/${proyectoId}/tareas/exportar-excel`, { responseType: 'blob' })
+      .then((r) => r.data as Blob),
+  // Reasignación masiva de responsable (prioridad 11) — para el caso "esta
+  // tanda de tareas ahora las lleva Fulano" sin editarlas una por una.
+  reasignarMasivo: (proyectoId: number, tareaIds: number[], responsableId: number) =>
+    api
+      .patch<Tarea[]>(`/proyectos/${proyectoId}/tareas/reasignar-masivo`, { tareaIds, responsableId })
+      .then((r) => r.data),
+};
+
+// Adjuntar archivos a proyectos/tareas (prioridad 11). El archivo en sí
+// vive en Supabase Storage — el frontend nunca habla directo con Supabase,
+// siempre pasa por estos endpoints propios (subir/descargar/borrar).
+export type Archivo = {
+  id: number;
+  nombreArchivo: string;
+  tipoMime: string | null;
+  tamanoBytes: number;
+  subidoEn: string;
+  subidoPor: UsuarioResumen | null;
+};
+
+function subirArchivo(url: string, archivo: File) {
+  const form = new FormData();
+  form.append('file', archivo);
+  return api.post<Archivo[]>(url, form).then((r) => r.data);
+}
+
+export const archivosApi = {
+  deProyecto: (proyectoId: number) =>
+    api.get<Archivo[]>(`/proyectos/${proyectoId}/archivos`).then((r) => r.data),
+  subirAProyecto: (proyectoId: number, archivo: File) =>
+    subirArchivo(`/proyectos/${proyectoId}/archivos`, archivo),
+  deTarea: (tareaId: number) => api.get<Archivo[]>(`/tareas/${tareaId}/archivos`).then((r) => r.data),
+  subirATarea: (tareaId: number, archivo: File) => subirArchivo(`/tareas/${tareaId}/archivos`, archivo),
+  descargar: (archivoId: number, nombreArchivo: string) =>
+    api.get(`/archivos/${archivoId}/descargar`, { responseType: 'blob' }).then((r) => {
+      descargarBlob(r.data as Blob, nombreArchivo);
+    }),
+  eliminar: (archivoId: number) => api.delete(`/archivos/${archivoId}`).then((r) => r.data),
 };
 
 export type UsuarioDirectorio = {

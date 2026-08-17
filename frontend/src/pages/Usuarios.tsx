@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 're
 import Layout from '../components/Layout';
 import {
   catalogoApi,
+  descargarBlob,
   getUsuario,
   usuariosApi,
   Direccion,
@@ -66,6 +67,12 @@ export default function Usuarios() {
     null,
   );
 
+  // Búsqueda y filtros (mejora funcional: prioridad 7) — igual que en
+  // Proyectos, client-side dado el tamaño actual del directorio.
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroRol, setFiltroRol] = useState('');
+  const [filtroEstatus, setFiltroEstatus] = useState('');
+
   function cargar() {
     setLoading(true);
     usuariosApi
@@ -93,6 +100,26 @@ export default function Usuarios() {
     [roles, form.rolId],
   );
   const esRolAdmin = rolSeleccionado?.nombre === 'admin';
+
+  const rolesPresentes = useMemo(
+    () => [...new Set(usuarios.map((u) => u.rol).filter((r): r is string => Boolean(r)))].sort(),
+    [usuarios],
+  );
+
+  const usuariosFiltrados = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase();
+    return usuarios.filter((u) => {
+      if (termino && !u.nombre.toLowerCase().includes(termino) && !u.email.toLowerCase().includes(termino)) {
+        return false;
+      }
+      if (filtroRol && u.rol !== filtroRol) return false;
+      if (filtroEstatus === 'activo' && !u.activo) return false;
+      if (filtroEstatus === 'inactivo' && u.activo) return false;
+      return true;
+    });
+  }, [usuarios, busqueda, filtroRol, filtroEstatus]);
+
+  const hayFiltrosActivos = Boolean(busqueda || filtroRol || filtroEstatus);
 
   function abrirNuevo() {
     setForm(FORM_VACIO);
@@ -175,14 +202,7 @@ export default function Usuarios() {
     setDescargando(true);
     try {
       const blob = await usuariosApi.descargarPlantilla();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Plantilla_Usuarios_FPT.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      descargarBlob(blob, 'Plantilla_Usuarios_FPT.xlsx');
     } catch {
       setErrorImportacion('No se pudo descargar la plantilla.');
     } finally {
@@ -493,8 +513,54 @@ export default function Usuarios() {
       {error && <p className="text-danger-500 text-sm">{error}</p>}
 
       {!loading && !error && (
-        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-2xl shadow-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre o correo…"
+            className="flex-1 min-w-[200px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <select
+            value={filtroRol}
+            onChange={(e) => setFiltroRol(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm capitalize"
+          >
+            <option value="">Todos los roles</option>
+            {rolesPresentes.map((r) => (
+              <option key={r} value={r} className="capitalize">
+                {r}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filtroEstatus}
+            onChange={(e) => setFiltroEstatus(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">Todos los estatus</option>
+            <option value="activo">Activo</option>
+            <option value="inactivo">Inactivo</option>
+          </select>
+          {hayFiltrosActivos && (
+            <button
+              type="button"
+              onClick={() => {
+                setBusqueda('');
+                setFiltroRol('');
+                setFiltroEstatus('');
+              }}
+              className="text-sm font-semibold text-primary-600 hover:text-primary-800"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="bg-white rounded-2xl shadow-card overflow-x-auto">
+          <table className="w-full text-sm min-w-[800px]">
             <thead className="bg-primary-50 text-primary-800 text-left">
               <tr>
                 <th className="px-5 py-3 font-bold">Nombre</th>
@@ -506,7 +572,7 @@ export default function Usuarios() {
               </tr>
             </thead>
             <tbody>
-              {usuarios.map((u) => (
+              {usuariosFiltrados.map((u) => (
                 <tr key={u.id} className="border-t border-gray-100">
                   <td className="px-5 py-3 font-semibold text-primary-800">{u.nombre}</td>
                   <td className="px-5 py-3 text-gray-600">{u.email}</td>
@@ -558,10 +624,12 @@ export default function Usuarios() {
                   </td>
                 </tr>
               ))}
-              {usuarios.length === 0 && (
+              {usuariosFiltrados.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-8 text-center text-gray-400">
-                    No hay usuarios para mostrar.
+                    {usuarios.length === 0
+                      ? 'No hay usuarios para mostrar.'
+                      : 'Ningún usuario coincide con la búsqueda/filtros.'}
                   </td>
                 </tr>
               )}

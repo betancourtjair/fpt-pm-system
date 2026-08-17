@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { clearSession, getUsuario, msRestantesDeSesion } from '../lib/api';
 import { cerrarSocket } from '../lib/socket';
@@ -12,6 +12,10 @@ type ItemActivo = 'inicio' | 'proyectos' | 'gantt' | 'usuarios' | 'metodologia';
 export default function Layout({ activo, children }: { activo: ItemActivo; children: ReactNode }) {
   const usuario = getUsuario();
   const navigate = useNavigate();
+  // Auditoría de vista móvil (prioridad 12): abajo de md, el menú lateral
+  // pasa de columna fija a cajón (drawer) que se abre con el botón ☰ del
+  // header — en escritorio (md+) sigue siempre visible como antes.
+  const [menuAbierto, setMenuAbierto] = useState(false);
 
   function logout() {
     cerrarSocket();
@@ -41,16 +45,30 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
         : 'text-primary-200 hover:bg-white/5'
     }`;
 
+  // Cierra el cajón al navegar — si no, en móvil el menú se queda abierto
+  // tapando la pantalla nueva después de dar click a un link.
+  function cerrarMenu() {
+    setMenuAbierto(false);
+  }
+
   return (
-    <div className="min-h-screen grid grid-cols-[240px_1fr] grid-rows-[64px_1fr]">
-      <header className="col-span-2 bg-primary-950 text-white flex items-center justify-between px-6">
-        <div className="flex items-center gap-3 font-display font-extrabold">
-          <img src="/logo-fpt.png" alt="Fitness Para Todos" className="w-9 h-9 rounded-lg" />
-          Gestión de Proyectos
+    <div className="min-h-screen flex flex-col md:grid md:grid-cols-[240px_1fr] md:grid-rows-[64px_1fr]">
+      <header className="relative z-30 md:col-span-2 bg-primary-950 text-white flex items-center justify-between px-4 sm:px-6 h-16 shrink-0 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 font-display font-extrabold min-w-0">
+          <button
+            type="button"
+            onClick={() => setMenuAbierto((v) => !v)}
+            className="md:hidden text-white text-2xl leading-none px-1 -ml-1"
+            aria-label={menuAbierto ? 'Cerrar menú' : 'Abrir menú'}
+          >
+            {menuAbierto ? '✕' : '☰'}
+          </button>
+          <img src="/logo-fpt.png" alt="Fitness Para Todos" className="w-9 h-9 rounded-lg shrink-0" />
+          <span className="truncate hidden sm:inline">Gestión de Proyectos</span>
         </div>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm shrink-0">
           <NotificacionesBell />
-          <span>
+          <span className="hidden sm:inline">
             {usuario?.nombre} · <span className="text-primary-300">{usuario?.rol}</span>
           </span>
           <button onClick={logout} className="text-accent-500 font-semibold hover:underline">
@@ -59,22 +77,36 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
         </div>
       </header>
 
-      <nav className="bg-primary-950 py-5 flex flex-col h-[calc(100vh-64px)]">
-        <div className="flex-1">
-          <Link to="/dashboard" className={itemClase('inicio')}>
+      {/* Fondo oscuro detrás del cajón — clic afuera lo cierra (solo móvil,
+          el cajón nunca se abre en md+ así que este overlay tampoco). */}
+      {menuAbierto && (
+        <div
+          className="fixed inset-0 top-16 bg-black/40 z-20 md:hidden"
+          onClick={cerrarMenu}
+          aria-hidden="true"
+        />
+      )}
+
+      <nav
+        className={`bg-primary-950 py-5 flex flex-col fixed md:static top-16 md:top-auto left-0 w-64 md:w-auto h-[calc(100vh-64px)] z-20 transition-transform duration-200 md:translate-x-0 ${
+          menuAbierto ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex-1 overflow-y-auto">
+          <Link to="/dashboard" className={itemClase('inicio')} onClick={cerrarMenu}>
             Inicio
           </Link>
-          <Link to="/proyectos" className={itemClase('proyectos')}>
+          <Link to="/proyectos" className={itemClase('proyectos')} onClick={cerrarMenu}>
             Proyectos
           </Link>
-          <Link to="/gantt" className={itemClase('gantt')}>
+          <Link to="/gantt" className={itemClase('gantt')} onClick={cerrarMenu}>
             Diagrama de Gantt
           </Link>
-          <Link to="/metodologia" className={itemClase('metodologia')}>
+          <Link to="/metodologia" className={itemClase('metodologia')} onClick={cerrarMenu}>
             Metodología
           </Link>
           {Boolean(usuario?.permisos?.manage_users) && (
-            <Link to="/usuarios" className={itemClase('usuarios')}>
+            <Link to="/usuarios" className={itemClase('usuarios')} onClick={cerrarMenu}>
               Admin
             </Link>
           )}
@@ -87,7 +119,9 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
         </a>
       </nav>
 
-      <main className="p-8 bg-[#F4F2F8] overflow-auto">{children}</main>
+      <main className="flex-1 min-w-0 p-4 sm:p-8 bg-[#F4F2F8] overflow-auto md:h-[calc(100vh-64px)]">
+        {children}
+      </main>
     </div>
   );
 }

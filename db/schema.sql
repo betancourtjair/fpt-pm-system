@@ -62,6 +62,21 @@ CREATE TABLE IF NOT EXISTS proyecto_areas (
   PRIMARY KEY (proyecto_id, area_id)
 );
 
+-- Presupuesto real vs. plan (mejora funcional, ver migración 007): bitácora
+-- de gastos reales de un proyecto — `proyectos.presupuesto` es lo planeado,
+-- la suma de esta tabla es lo realmente gastado.
+CREATE TABLE IF NOT EXISTS gastos_proyecto (
+  id SERIAL PRIMARY KEY,
+  proyecto_id INT REFERENCES proyectos(id) ON DELETE CASCADE NOT NULL,
+  concepto VARCHAR(200) NOT NULL,
+  monto NUMERIC(14, 2) NOT NULL,
+  fecha DATE NOT NULL,
+  creado_por INT REFERENCES usuarios(id),
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gastos_proyecto_proyecto_id ON gastos_proyecto(proyecto_id);
+
 CREATE TABLE IF NOT EXISTS tareas (
   id SERIAL PRIMARY KEY,
   proyecto_id INT REFERENCES proyectos(id) NOT NULL,
@@ -82,6 +97,29 @@ CREATE TABLE IF NOT EXISTS tarea_usuarios (
   usuario_id INT REFERENCES usuarios(id) ON DELETE CASCADE,
   PRIMARY KEY (tarea_id, usuario_id)
 );
+
+-- Adjuntar archivos a proyectos/tareas (mejora funcional, ver migración
+-- 008): el archivo vive en Supabase Storage (bucket "adjuntos", privado) —
+-- aquí solo el metadato + la ruta dentro del bucket. Exactamente uno de
+-- proyecto_id/tarea_id debe estar lleno.
+CREATE TABLE IF NOT EXISTS adjuntos (
+  id SERIAL PRIMARY KEY,
+  proyecto_id INT REFERENCES proyectos(id) ON DELETE CASCADE,
+  tarea_id INT REFERENCES tareas(id) ON DELETE CASCADE,
+  nombre_archivo VARCHAR(255) NOT NULL,
+  ruta_storage VARCHAR(500) NOT NULL,
+  tipo_mime VARCHAR(150),
+  tamano_bytes BIGINT NOT NULL,
+  subido_por INT REFERENCES usuarios(id),
+  subido_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT chk_adjunto_un_solo_dueno CHECK (
+    (proyecto_id IS NOT NULL AND tarea_id IS NULL) OR
+    (proyecto_id IS NULL AND tarea_id IS NOT NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_adjuntos_proyecto_id ON adjuntos(proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_adjuntos_tarea_id ON adjuntos(tarea_id);
 
 CREATE TABLE IF NOT EXISTS alertas_enviadas (
   id SERIAL PRIMARY KEY,

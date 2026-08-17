@@ -9,9 +9,11 @@ import { Proyecto } from '../entities/proyecto.entity';
 import { Area } from '../entities/area.entity';
 import { Direccion } from '../entities/direccion.entity';
 import { Usuario } from '../entities/usuario.entity';
+import { GastoProyecto } from '../entities/gasto-proyecto.entity';
 import { JwtPayload } from '../auth/auth.service';
 import { CreateProyectoDto } from './dto/create-proyecto.dto';
 import { UpdateProyectoDto } from './dto/update-proyecto.dto';
+import { CreateGastoDto } from './dto/create-gasto.dto';
 import {
   esAdmin,
   esDirector,
@@ -20,6 +22,7 @@ import {
   puedeVerPresupuesto,
 } from '../common/permisos.util';
 import { colorEfectivo } from '../catalogo/paleta-colores';
+import { generarExcelProyectos } from '../common/excel-export.util';
 
 const RELACIONES = { areas: true, responsable: true, creador: true } as const;
 
@@ -30,6 +33,7 @@ export class ProyectosService {
     @InjectRepository(Area) private readonly areas: Repository<Area>,
     @InjectRepository(Usuario) private readonly usuarios: Repository<Usuario>,
     @InjectRepository(Direccion) private readonly direcciones: Repository<Direccion>,
+    @InjectRepository(GastoProyecto) private readonly gastos: Repository<GastoProyecto>,
   ) {}
 
   // El color se administra por Dirección (no por Área — más simple de
@@ -38,6 +42,21 @@ export class ProyectosService {
   private async mapaColoresPorDireccion(): Promise<Map<number, string>> {
     const filas = await this.direcciones.find();
     return new Map(filas.map((d) => [d.id, colorEfectivo(d)]));
+  }
+
+  // Presupuesto real vs. plan (prioridad 8): suma de gastos_proyecto por
+  // proyecto, calculada una sola vez por request igual que los colores. Solo
+  // se consulta para los proyectos que ya se van a serializar (ids === 'all'
+  // consulta todos, si no, solo los del alcance del usuario).
+  private async mapaGastosPorProyecto(ids: number[] | 'all'): Promise<Map<number, number>> {
+    if (ids !== 'all' && ids.length === 0) return new Map();
+    const filas: { proyecto_id: number; total: string }[] = await this.gastos.query(
+      ids === 'all'
+        ? `SELECT proyecto_id, SUM(monto)::text AS total FROM gastos_proyecto GROUP BY proyecto_id`
+        : `SELECT proyecto_id, SUM(monto)::text AS total FROM gastos_proyecto WHERE proyecto_id = ANY($1) GROUP BY proyecto_id`,
+      ids === 'all' ? [] : [ids],
+    );
+    return new Map(filas.map((f) => [f.proyecto_id, Number(f.total)]));
   }
 
   // ------------------------------------------------------------------
@@ -107,6 +126,7 @@ export class ProyectosService {
     user: JwtPayload,
     autorizado: boolean,
     coloresPorDireccion: Map<number, string>,
+    gastosPorProyecto: Map<number, number>,
   ) {
     const base: Record<string, unknown> = {
       id: proyecto.id,
@@ -127,8 +147,11 @@ export class ProyectosService {
         color: coloresPorDireccion.get(a.direccionId) ?? '#94a3b8',
       })),
     };
+    // gastoTotal viaja con la misma regla de visibilidad que presupuesto —
+    // es información financiera del proyecto, tiene el mismo candado.
     if (puedeVerPresupuesto(user, autorizado)) {
       base.presupuesto = Number(proyecto.presupuesto);
+      base.gastoTotal = gastosPorProyecto.get(proyecto.id) ?? 0;
     }
     return base;
   }
@@ -142,11 +165,12 @@ export class ProyectosService {
       relations: RELACIONES,
       order: { id: 'ASC' },
     });
-    const [autorizado, coloresPorDireccion] = await Promise.all([
+    const [autorizado, coloresPorDireccion, gastosPorProyecto] = await Promise.all([
       this.autorizacionPresupuesto(user),
       this.mapaColoresPorDireccion(),
+      this.mapaGastosPorProyecto(ids),
     ]);
-    return proyectos.map((p) => this.serializar(p, user, autorizado, coloresPorDireccion));
+    return proyectos.map((p) => this.serializar(p, user, autorizado, coloresPorDireccion, gastosPorProyecto));
   }
 
   async obtenerEntidad(id: number): Promise<Proyecto> {
@@ -160,11 +184,87 @@ export class ProyectosService {
     if (!(await this.puedeVer(proyecto, user))) {
       throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
     }
-    const [autorizado, coloresPorDireccion] = await Promise.all([
+    const [autorizado, coloresPorDireccion, gastosPorProyecto] = await Promise.all([
       this.autorizacionPresupuesto(user),
       this.mapaColoresPorDireccion(),
+      this.mapaGastosPorProyecto([id]),
     ]);
-    return this.serializar(proyecto, user, autorizado, coloresPorDireccion);
+    return this.serializar(proyecto, user, autorizado, coloresPorDireccion, gastosPorProyecto);
+  }
+
+  // Exportar a Excel (prioridad 9) — reutiliza listar(), así que respeta el
+  // mismo alcance por rol y la misma regla de visibilidad de presupuesto
+  // que la pantalla de Proyectos (nunca exporta un dato que el usuario no
+  // vería ya en la app).
+  async exportarExcel(user: JwtPayload): Promise<Buffer> {
+    const proyectos = await this.listar(user);
+    const filas = proyectos.map((p: any) => ({
+      nombre: p.nombre,
+      areas: (p.areas ?? []).map((a: any) => a.nombre).join(', '),
+      responsable: p.responsable?.nombre ?? '—',
+      fechaInicio: p.fechaInicio,
+      fechaFin: p.fechaFin,
+      estatus: p.estatus,
+      presupuesto: p.presupuesto,
+      gastoTotal: p.gastoTotal,
+    }));
+    return generarExcelProyectos(filas);
+  }
+
+  // ------------------------------------------------------------------
+  // Gastos reales (prioridad 8: presupuesto real vs. plan). Ver el gasto
+  // desglosado exige la misma autorización que ver el presupuesto —
+  // registrar/borrar un gasto exige poder administrar el proyecto (mismo
+  // control que crear/editar tareas).
+  // ------------------------------------------------------------------
+  private async verificarPuedeVerPresupuesto(proyecto: Proyecto, user: JwtPayload): Promise<void> {
+    if (!(await this.puedeVer(proyecto, user))) {
+      throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
+    }
+    const autorizado = await this.autorizacionPresupuesto(user);
+    if (!puedeVerPresupuesto(user, autorizado)) {
+      throw new ForbiddenException('Tu rol no tiene autorizado ver el presupuesto de este proyecto.');
+    }
+  }
+
+  async listarGastos(proyectoId: number, user: JwtPayload) {
+    const proyecto = await this.obtenerEntidad(proyectoId);
+    await this.verificarPuedeVerPresupuesto(proyecto, user);
+    const filas = await this.gastos.find({
+      where: { proyectoId },
+      relations: { creador: true },
+      order: { fecha: 'DESC', id: 'DESC' },
+    });
+    return filas.map((g) => ({
+      id: g.id,
+      concepto: g.concepto,
+      monto: Number(g.monto),
+      fecha: g.fecha,
+      creador: g.creador ? { id: g.creador.id, nombre: g.creador.nombre } : null,
+    }));
+  }
+
+  async crearGasto(proyectoId: number, dto: CreateGastoDto, user: JwtPayload) {
+    const proyecto = await this.obtenerEntidad(proyectoId);
+    this.verificarPuedeGestionar(proyecto, user);
+    const gasto = this.gastos.create({
+      proyectoId,
+      concepto: dto.concepto,
+      monto: String(dto.monto),
+      fecha: dto.fecha,
+      creadoPor: user.sub,
+    });
+    await this.gastos.save(gasto);
+    return this.listarGastos(proyectoId, user);
+  }
+
+  async eliminarGasto(proyectoId: number, gastoId: number, user: JwtPayload) {
+    const proyecto = await this.obtenerEntidad(proyectoId);
+    this.verificarPuedeGestionar(proyecto, user);
+    const gasto = await this.gastos.findOne({ where: { id: gastoId, proyectoId } });
+    if (!gasto) throw new NotFoundException('Gasto no encontrado.');
+    await this.gastos.remove(gasto);
+    return this.listarGastos(proyectoId, user);
   }
 
   private async validarAreasEnAlcance(areaIds: number[], user: JwtPayload) {

@@ -1,7 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { catalogoApi, getUsuario, proyectosApi, usuariosApi, Direccion, Proyecto } from '../lib/api';
+import {
+  catalogoApi,
+  descargarBlob,
+  getUsuario,
+  proyectosApi,
+  usuariosApi,
+  Direccion,
+  Proyecto,
+} from '../lib/api';
 
 const ESTATUS_LABEL: Record<string, string> = {
   no_iniciado: 'No iniciado',
@@ -33,6 +41,26 @@ export default function Proyectos() {
   const [presupuesto, setPresupuesto] = useState('');
   const [responsableId, setResponsableId] = useState('');
   const [areaIds, setAreaIds] = useState<number[]>([]);
+  const [exportando, setExportando] = useState(false);
+
+  async function exportarExcel() {
+    setExportando(true);
+    try {
+      const blob = await proyectosApi.exportarExcel();
+      descargarBlob(blob, 'Proyectos_FPT.xlsx');
+    } catch {
+      setError('No se pudo generar el archivo de Excel.');
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  // Búsqueda y filtros (mejora funcional: prioridad 7) — todo client-side,
+  // el volumen de proyectos de una organización de este tamaño no justifica
+  // paginar/filtrar en el backend todavía.
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroDireccionId, setFiltroDireccionId] = useState('');
+  const [filtroEstatus, setFiltroEstatus] = useState('');
 
   function cargar() {
     setLoading(true);
@@ -45,8 +73,11 @@ export default function Proyectos() {
 
   useEffect(() => {
     cargar();
+    // Direcciones se usan tanto para el formulario de creación (admin/
+    // director/gerente_area) como para el filtro de la lista (cualquiera
+    // con acceso a Proyectos) — por eso ya no depende de puedeCrear.
+    catalogoApi.direcciones().then(setDirecciones).catch(() => {});
     if (puedeCrear) {
-      catalogoApi.direcciones().then(setDirecciones).catch(() => {});
       // Un usuario con rol admin también puede quedar como Responsable de
       // un proyecto real (es una persona del equipo, no deja de serlo por
       // tener ese rol) — este selector solo muestra el nombre, nunca el
@@ -54,6 +85,20 @@ export default function Proyectos() {
       usuariosApi.listar().then(setUsuarios).catch(() => {});
     }
   }, []);
+
+  const proyectosFiltrados = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase();
+    return proyectos.filter((p) => {
+      if (termino && !p.nombre.toLowerCase().includes(termino)) return false;
+      if (filtroDireccionId && !p.areas.some((a) => String(a.direccionId) === filtroDireccionId)) {
+        return false;
+      }
+      if (filtroEstatus && p.estatus !== filtroEstatus) return false;
+      return true;
+    });
+  }, [proyectos, busqueda, filtroDireccionId, filtroEstatus]);
+
+  const hayFiltrosActivos = Boolean(busqueda || filtroDireccionId || filtroEstatus);
 
   // Áreas que este usuario puede seleccionar al crear un proyecto: admin
   // ve todas, director solo las de su Dirección, gerente_area solo la suya
@@ -116,16 +161,25 @@ export default function Proyectos() {
 
   return (
     <Layout activo="proyectos">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <h1 className="font-display font-extrabold text-2xl text-primary-900">Proyectos</h1>
-        {puedeCrear && (
+        <div className="flex gap-2">
           <button
-            onClick={() => setMostrarForm((v) => !v)}
-            className="bg-accent-500 hover:bg-accent-600 text-gray-900 font-bold rounded-lg px-4 py-2 text-sm"
+            onClick={exportarExcel}
+            disabled={exportando}
+            className="bg-white border border-primary-200 hover:bg-primary-50 text-primary-800 font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-60"
           >
-            {mostrarForm ? 'Cancelar' : '+ Nuevo proyecto'}
+            {exportando ? 'Generando…' : '⬇ Exportar a Excel'}
           </button>
-        )}
+          {puedeCrear && (
+            <button
+              onClick={() => setMostrarForm((v) => !v)}
+              className="bg-accent-500 hover:bg-accent-600 text-gray-900 font-bold rounded-lg px-4 py-2 text-sm"
+            >
+              {mostrarForm ? 'Cancelar' : '+ Nuevo proyecto'}
+            </button>
+          )}
+        </div>
       </div>
 
       {mostrarForm && (
@@ -227,8 +281,57 @@ export default function Proyectos() {
       {error && <p className="text-danger-500 text-sm">{error}</p>}
 
       {!loading && !error && (
-        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-2xl shadow-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar proyecto por nombre…"
+            className="flex-1 min-w-[200px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <select
+            value={filtroDireccionId}
+            onChange={(e) => setFiltroDireccionId(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">Todas las direcciones</option>
+            {direcciones.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.nombre}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filtroEstatus}
+            onChange={(e) => setFiltroEstatus(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">Todos los estatus</option>
+            {Object.entries(ESTATUS_LABEL).map(([valor, etiqueta]) => (
+              <option key={valor} value={valor}>
+                {etiqueta}
+              </option>
+            ))}
+          </select>
+          {hayFiltrosActivos && (
+            <button
+              type="button"
+              onClick={() => {
+                setBusqueda('');
+                setFiltroDireccionId('');
+                setFiltroEstatus('');
+              }}
+              className="text-sm font-semibold text-primary-600 hover:text-primary-800"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="bg-white rounded-2xl shadow-card overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-primary-50 text-primary-800 text-left">
               <tr>
                 <th className="px-5 py-3 font-bold">Proyecto</th>
@@ -244,7 +347,7 @@ export default function Proyectos() {
               </tr>
             </thead>
             <tbody>
-              {proyectos.map((p, i) => {
+              {proyectosFiltrados.map((p, i) => {
                 // El borde de acento usa el color de la Dirección del
                 // proyecto (un proyecto puede tener varias áreas; se usa
                 // la primera). El fondo, en cambio, alterna claro/oscuro
@@ -293,10 +396,12 @@ export default function Proyectos() {
                   </tr>
                 );
               })}
-              {proyectos.length === 0 && (
+              {proyectosFiltrados.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-8 text-center text-gray-400">
-                    No hay proyectos dentro de tu alcance todavía.
+                    {proyectos.length === 0
+                      ? 'No hay proyectos dentro de tu alcance todavía.'
+                      : 'Ningún proyecto coincide con la búsqueda/filtros.'}
                   </td>
                 </tr>
               )}
