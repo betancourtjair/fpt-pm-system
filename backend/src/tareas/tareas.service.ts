@@ -13,6 +13,7 @@ import { ProyectosService } from '../proyectos/proyectos.service';
 import { CreateTareaDto } from './dto/create-tarea.dto';
 import { UpdateTareaDto, ActualizarAvanceDto } from './dto/update-tarea.dto';
 import { puedeVerPresupuesto } from '../common/permisos.util';
+import { AlertasService } from '../alertas/alertas.service';
 
 const RELACIONES = {
   proyecto: true,
@@ -30,7 +31,22 @@ export class TareasService {
     // puedes ver o administrar un proyecto, esa misma regla aplica a sus
     // tareas — evita duplicar la lógica de alcance por rol.
     private readonly proyectos: ProyectosService,
+    // Alerta "asignacion" (Fase 2, PID sección 7) — se dispara solo para
+    // quien se agrega de nuevo, nunca para quien ya estaba asignado.
+    private readonly alertas: AlertasService,
   ) {}
+
+  // Nunca debe tronar la creación/actualización de una tarea por un
+  // problema de correo (Resend caído, red, etc.) — de por sí EmailService
+  // ya atrapa sus propios errores, esto es un blindaje adicional.
+  private async notificarAsignacionSinRomper(tareaId: number, usuarioIds: number[]) {
+    try {
+      await this.alertas.notificarAsignacion(tareaId, usuarioIds);
+    } catch {
+      // Ya se registró en el log de AlertasService/EmailService; aquí no
+      // hay nada más que hacer.
+    }
+  }
 
   private serializar(tarea: Tarea, user: JwtPayload, autorizado: boolean) {
     const base: Record<string, unknown> = {
@@ -142,6 +158,14 @@ export class TareasService {
     });
     const guardada = await this.tareas.save(tarea);
     if (dto.usuarioIds?.length) await this.asignarUsuarios(guardada.id, dto.usuarioIds);
+
+    // Alerta "asignacion" (Fase 2): todos los que quedan asignados desde
+    // el arranque (responsable + usuariosAsignados) reciben el correo.
+    const asignadosIniciales = [dto.responsableId, ...(dto.usuarioIds ?? [])].filter(
+      (id): id is number => Boolean(id),
+    );
+    await this.notificarAsignacionSinRomper(guardada.id, asignadosIniciales);
+
     return this.obtener(guardada.id, user);
   }
 
@@ -149,6 +173,15 @@ export class TareasService {
     const tarea = await this.obtenerEntidad(id);
     const proyecto = await this.proyectos.obtenerEntidad(tarea.proyectoId);
     this.proyectos.verificarPuedeGestionar(proyecto, user);
+
+    // Alerta "asignacion" (Fase 2): se calcula quién estaba asignado ANTES
+    // de tocar nada, para más abajo poder avisarle solo a quien se agrega
+    // de nuevo (nunca a quien ya estaba, ver AlertasService).
+    const asignadosAntes = new Set<number>(
+      [tarea.responsableId, ...(tarea.usuariosAsignados ?? []).map((u) => u.id)].filter(
+        (v): v is number => Boolean(v),
+      ),
+    );
 
     if (dto.responsableId) {
       const responsable = await this.usuarios.findOne({ where: { id: dto.responsableId } });
@@ -179,6 +212,20 @@ export class TareasService {
     if (Object.keys(cambios).length > 0) {
       await this.tareas.update(id, cambios);
     }
+
+    // Alerta "asignacion": responsable final (si cambió) + usuarios
+    // asignados finales (si dto.usuarioIds vino, o los mismos de antes si
+    // no), menos quien ya estaba en asignadosAntes.
+    const responsableFinal = dto.responsableId !== undefined ? dto.responsableId : tarea.responsableId;
+    const usuariosFinales = dto.usuarioIds ?? (tarea.usuariosAsignados ?? []).map((u) => u.id);
+    const asignadosDespues = [responsableFinal, ...usuariosFinales].filter(
+      (v): v is number => Boolean(v),
+    );
+    const nuevosAsignados = [...new Set(asignadosDespues)].filter((v) => !asignadosAntes.has(v));
+    if (nuevosAsignados.length > 0) {
+      await this.notificarAsignacionSinRomper(id, nuevosAsignados);
+    }
+
     return this.obtener(id, user);
   }
 

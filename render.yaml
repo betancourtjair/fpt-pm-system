@@ -20,4 +20,8 @@ services:
       - key: CORS_ORIGIN
         sync: false   # dominio del frontend en Netlify, ej. https://tu-sitio.netlify.app
       - key: RESEND_API_KEY
-        sync: false   # se usa a partir de la Fase 2 (alertas) — puede quedar vacío por ahora
+        sync: false   # Fase 2 (alertas) — key de Resend, "Sending access". Vacío = alertas quedan "fallido", el resto del sistema sigue normal.
+      - key: EMAIL_REMITENTE
+        value: "Notificaciones FPT <notificaciones@send.fpt.com.mx>"
+      - key: FRONTEND_URL
+        sync: false   # URL pública del frontend en Netlify, ej. https://tu-sitio.netlify.app — se usa en el botón de los correos de alerta
