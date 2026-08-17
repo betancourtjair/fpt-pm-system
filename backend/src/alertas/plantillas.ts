@@ -91,3 +91,26 @@ export function htmlRecordatorio(tarea: DatosTarea, tipo: '48h' | '24h'): string
   const cuerpo = `<p style="font-size:14px;color:#374151;line-height:1.5;margin:0;">Quedan aproximadamente <strong>${horas}</strong> para la fecha límite de esta tarea. Si ya la terminaste, actualiza su estatus en el sistema para que este recordatorio no se repita.</p>`;
   return envoltura(`Vence en ${horas}`, colorBadge, cuerpo, tarea);
 }
+
+// Cuántos días completos pasaron desde fechaFin (DATE 'YYYY-MM-DD') hasta
+// hoy — se calcula por componentes de fecha (no restando timestamps) para
+// evitar corrimientos por zona horaria u horario de verano.
+function diasDesde(fechaISO: string): number {
+  const [anio, mes, dia] = fechaISO.split('-').map((v) => parseInt(v, 10));
+  const fecha = Date.UTC(anio, mes - 1, dia);
+  const hoy = new Date();
+  const hoyUtc = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const msPorDia = 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.round((hoyUtc - fecha) / msPorDia));
+}
+
+export function asuntoVencida(tarea: DatosTarea): string {
+  return `Tarea vencida: "${tarea.nombre}"`;
+}
+
+export function htmlVencida(tarea: DatosTarea): string {
+  const dias = diasDesde(tarea.fechaFin);
+  const texto = dias === 0 ? 'venció hoy' : dias === 1 ? 'venció hace 1 día' : `venció hace ${dias} días`;
+  const cuerpo = `<p style="font-size:14px;color:#374151;line-height:1.5;margin:0;">Esta tarea <strong>${texto}</strong> y sigue sin marcarse como completada. Actualiza su estatus o su fecha límite en el sistema para darle seguimiento.</p>`;
+  return envoltura('Tarea vencida', '#E8384F', cuerpo, tarea);
+}

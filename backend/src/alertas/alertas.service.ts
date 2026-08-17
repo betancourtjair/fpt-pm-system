@@ -10,8 +10,10 @@ import { EmailService } from '../common/email.service';
 import {
   asuntoAsignacion,
   asuntoRecordatorio,
+  asuntoVencida,
   htmlAsignacion,
   htmlRecordatorio,
+  htmlVencida,
 } from './plantillas';
 
 interface DatosTarea {
@@ -30,12 +32,14 @@ interface FilaTareaPorVencer {
   dias_restantes: number;
 }
 
-// Fase 2 del roadmap (PID sección 7): tres tipos de alerta por correo —
+// Fase 2 del roadmap (PID sección 7): cuatro tipos de alerta por correo —
 // "asignacion" (se dispara desde TareasService al crear/actualizar una
-// tarea), "48h" y "24h" (las revisa el cron diario de este servicio). La
-// tabla alertas_enviadas (db/schema.sql) es la fuente de verdad para no
-// duplicar envíos: su UNIQUE(tarea_id, usuario_id, tipo) es lo que hace
-// segura la idempotencia en registrarYEnviar().
+// tarea), "48h", "24h" y "vencida" (las revisa el cron diario de este
+// servicio). La tabla alertas_enviadas (db/schema.sql) es la fuente de
+// verdad para no duplicar envíos: su UNIQUE(tarea_id, usuario_id, tipo) es
+// lo que hace segura la idempotencia en registrarYEnviar() — "vencida" solo
+// se manda una vez por tarea+usuario aunque la tarea siga abierta muchos
+// días después de su fecha límite.
 //
 // fecha_fin en tareas es DATE (sin hora), así que 48h/24h solo se pueden
 // calcular con granularidad de días completos — de ahí que el cron corra
@@ -87,7 +91,8 @@ export class AlertasService {
   }
 
   // Cron diario — 8:00am hora del servidor. Revisa todas las tareas no
-  // completadas cuya fecha_fin quede a exactamente 2 o 1 días de hoy.
+  // completadas cuya fecha_fin quede a exactamente 2 o 1 días de hoy, o
+  // que ya hayan pasado su fecha_fin (alerta "vencida", una sola vez).
   @Cron('0 8 * * *')
   async tareaProgramadaDiaria(): Promise<void> {
     const resultado = await this.revisarRecordatorios();
@@ -112,7 +117,7 @@ export class AlertasService {
        FROM tareas t
        JOIN proyectos p ON p.id = t.proyecto_id
        WHERE t.estatus <> 'completada'
-         AND (t.fecha_fin - CURRENT_DATE) IN (1, 2)`,
+         AND ((t.fecha_fin - CURRENT_DATE) IN (1, 2) OR t.fecha_fin < CURRENT_DATE)`,
     );
 
     if (tareas.length === 0) return { revisadas: 0, notificaciones: 0 };
@@ -141,7 +146,7 @@ export class AlertasService {
 
     let notificaciones = 0;
     for (const t of tareas) {
-      const tipo: TipoAlerta = t.dias_restantes === 2 ? '48h' : '24h';
+      const tipo: TipoAlerta = t.dias_restantes === 2 ? '48h' : t.dias_restantes === 1 ? '24h' : 'vencida';
       const datosTarea: DatosTarea = {
         id: t.id,
         nombre: t.nombre,
@@ -217,14 +222,18 @@ export class AlertasService {
       },
     });
 
-    const asunto =
-      args.tipo === 'asignacion'
-        ? asuntoAsignacion(args.datosTarea)
-        : asuntoRecordatorio(args.datosTarea, args.tipo);
-    const html =
-      args.tipo === 'asignacion'
-        ? htmlAsignacion(args.datosTarea)
-        : htmlRecordatorio(args.datosTarea, args.tipo);
+    let asunto: string;
+    let html: string;
+    if (args.tipo === 'asignacion') {
+      asunto = asuntoAsignacion(args.datosTarea);
+      html = htmlAsignacion(args.datosTarea);
+    } else if (args.tipo === 'vencida') {
+      asunto = asuntoVencida(args.datosTarea);
+      html = htmlVencida(args.datosTarea);
+    } else {
+      asunto = asuntoRecordatorio(args.datosTarea, args.tipo);
+      html = htmlRecordatorio(args.datosTarea, args.tipo);
+    }
 
     const resultado = await this.email.enviar(args.destinatario, asunto, html);
 

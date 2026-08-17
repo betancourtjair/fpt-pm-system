@@ -122,13 +122,58 @@ export class TareasService {
     }
   }
 
-  private async validarDependencia(proyectoId: number, dependenciaId: number, tareaId?: number) {
+  // Mejora funcional (PID: validación de fechas y dependencias): antes solo
+  // se checaba auto-referencia y mismo proyecto — ni la fecha propia de la
+  // tarea ni una dependencia circular indirecta (A depende de B, B depende
+  // de A, directa o a través de una cadena) quedaban cubiertas.
+  private validarFechas(fechaInicio: string, fechaFin: string) {
+    if (fechaInicio > fechaFin) {
+      throw new BadRequestException('La fecha de inicio no puede ser posterior a la fecha de fin.');
+    }
+  }
+
+  private async validarDependencia(
+    proyectoId: number,
+    dependenciaId: number,
+    fechaInicioTarea: string,
+    tareaId?: number,
+  ) {
     if (dependenciaId === tareaId) {
       throw new BadRequestException('Una tarea no puede depender de sí misma.');
     }
     const predecesora = await this.tareas.findOne({ where: { id: dependenciaId } });
     if (!predecesora || predecesora.proyectoId !== proyectoId) {
       throw new BadRequestException('La tarea predecesora debe pertenecer al mismo proyecto.');
+    }
+    // Consistencia de fechas (comentario original del entity ya lo decía:
+    // "esta tarea no puede iniciar hasta que termine su predecesora" — pero
+    // nunca se validaba). Comparación lexicográfica válida: ambas son
+    // columnas DATE en formato 'YYYY-MM-DD'.
+    if (predecesora.fechaFin > fechaInicioTarea) {
+      throw new BadRequestException(
+        'Esta tarea no puede iniciar antes de que termine su tarea predecesora.',
+      );
+    }
+
+    // Ciclo de dependencias (directo o en cadena): si al recorrer la cadena
+    // de predecesoras desde `predecesora` llegamos de nuevo a `tareaId`,
+    // asignar esta dependencia dejaría dos tareas esperándose mutuamente.
+    // Solo aplica al editar — una tarea recién creada no puede aparecer
+    // todavía en ninguna cadena existente.
+    if (tareaId !== undefined) {
+      let actual: Tarea | null = predecesora;
+      const visitadas = new Set<number>();
+      while (actual && !visitadas.has(actual.id)) {
+        if (actual.id === tareaId) {
+          throw new BadRequestException(
+            'Esta dependencia crearía un ciclo entre tareas (dependencia circular).',
+          );
+        }
+        visitadas.add(actual.id);
+        actual = actual.dependenciaId
+          ? await this.tareas.findOne({ where: { id: actual.dependenciaId } })
+          : null;
+      }
     }
   }
 
@@ -153,8 +198,9 @@ export class TareasService {
     const responsable = await this.usuarios.findOne({ where: { id: dto.responsableId } });
     if (!responsable) throw new NotFoundException('El responsable indicado no existe.');
     if (dto.usuarioIds?.length) await this.validarUsuarios(dto.usuarioIds);
+    this.validarFechas(dto.fechaInicio, dto.fechaFin);
     if (dto.dependenciaId !== undefined) {
-      await this.validarDependencia(proyectoId, dto.dependenciaId);
+      await this.validarDependencia(proyectoId, dto.dependenciaId, dto.fechaInicio);
     }
 
     const tarea = this.tareas.create({
@@ -202,8 +248,22 @@ export class TareasService {
       await this.validarUsuarios(dto.usuarioIds);
       await this.asignarUsuarios(id, dto.usuarioIds);
     }
-    if (dto.dependenciaId !== undefined) {
-      await this.validarDependencia(tarea.proyectoId, dto.dependenciaId, id);
+
+    // Fechas finales resultantes (propia si no cambia, o la nueva del dto)
+    // — se validan si se toca cualquiera de las dos fechas o la dependencia,
+    // para nunca dejar la tarea en un estado inconsistente.
+    const fechaInicioFinal = dto.fechaInicio ?? tarea.fechaInicio;
+    const fechaFinFinal = dto.fechaFin ?? tarea.fechaFin;
+    if (dto.fechaInicio !== undefined || dto.fechaFin !== undefined) {
+      this.validarFechas(fechaInicioFinal, fechaFinFinal);
+    }
+    // Si cambia la dependencia, o solo cambia fechaInicio pero la tarea ya
+    // tenía una predecesora, hay que re-checar contra ella (podría quedar
+    // iniciando antes de que termine, aunque la dependencia en sí no haya
+    // cambiado).
+    const dependenciaIdFinal = dto.dependenciaId !== undefined ? dto.dependenciaId : tarea.dependenciaId;
+    if (dependenciaIdFinal !== null && (dto.dependenciaId !== undefined || dto.fechaInicio !== undefined)) {
+      await this.validarDependencia(tarea.proyectoId, dependenciaIdFinal, fechaInicioFinal, id);
     }
 
     // IMPORTANTE: UPDATE dirigido, no tarea.save() — `tarea` se cargó con

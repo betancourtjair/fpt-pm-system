@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS alertas_enviadas (
   id SERIAL PRIMARY KEY,
   tarea_id INT REFERENCES tareas(id) NOT NULL,
   usuario_id INT REFERENCES usuarios(id) NOT NULL,
-  tipo VARCHAR(20) NOT NULL, -- asignacion | 48h | 24h
+  tipo VARCHAR(20) NOT NULL, -- asignacion | 48h | 24h | vencida
   fecha_programada TIMESTAMPTZ NOT NULL,
   fecha_enviada TIMESTAMPTZ,
   estatus_envio VARCHAR(20) DEFAULT 'pendiente',

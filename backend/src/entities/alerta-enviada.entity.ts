@@ -6,7 +6,10 @@ import { Usuario } from './usuario.entity';
 // El UNIQUE (tarea_id, usuario_id, tipo) en db/schema.sql es lo que nos da
 // idempotencia: nunca se manda dos veces el mismo tipo de alerta a la misma
 // persona para la misma tarea (ver AlertasService.registrarSiNoExiste).
-export type TipoAlerta = 'asignacion' | '48h' | '24h';
+// "vencida" (mejora funcional): se dispara una sola vez cuando una tarea
+// pasa su fecha_fin sin marcarse como completada — antes de esto, pasada
+// la fecha límite nadie volvía a saber nada de la tarea.
+export type TipoAlerta = 'asignacion' | '48h' | '24h' | 'vencida';
 
 @Entity('alertas_enviadas')
 export class AlertaEnviada {

@@ -1,0 +1,48 @@
+name: CI
+
+# Mejora de infraestructura (prioridad 5 de la lista): antes no había ningún
+# check automático — un error de compilación solo se descubría hasta que
+# Render/Netlify intentaban desplegarlo (o, peor, ya en producción). Este
+# workflow corre en cada push y cada pull request hacia main: si tsc o el
+# build fallan, el check en GitHub queda en rojo, pero NO cambia el flujo de
+# trabajo actual — se sigue pudiendo hacer push directo a main como siempre,
+# esto es solo una alarma temprana, no un gate obligatorio.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (tsc + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm run build
+
+  frontend:
+    name: Frontend (tsc + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -24,6 +26,13 @@ import { RealtimeModule } from './realtime/realtime.module';
     // que RealtimeGateway escucha para retransmitir por WebSocket — así
     // ninguno de los dos necesita depender directamente del gateway.
     EventEmitterModule.forRoot(),
+    // Límite de peticiones por IP (mejora de seguridad): un tope generoso
+    // aplica a toda la API por default; login/recuperar-contraseña llevan
+    // un tope mucho más estricto vía @Throttle en AuthController, porque
+    // son los blancos típicos de fuerza bruta / enumeración de correos.
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 60 }],
+    }),
     DatabaseModule,
     HealthModule,
     AuthModule,
@@ -35,5 +44,6 @@ import { RealtimeModule } from './realtime/realtime.module';
     NotificacionesModule,
     RealtimeModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
