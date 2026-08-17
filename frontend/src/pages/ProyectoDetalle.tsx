@@ -72,17 +72,12 @@ export default function ProyectoDetalle() {
 
   useEffect(() => {
     cargarTodo();
-    // El rol "admin" es de alcance global para gestionar cuentas y, si hace
-    // falta, eliminar proyectos — no participa como responsable ni como
-    // colaborador operativo de una tarea, así que se excluye de este
-    // directorio (PID sección 9.2). Sigue apareciendo tal cual en la
-    // pantalla de gestión de usuarios (Usuarios.tsx), que usa su propia
-    // llamada a este mismo endpoint.
-    if (puedeGestionar)
-      usuariosApi
-        .listar()
-        .then((lista) => setUsuarios(lista.filter((u) => u.rol !== 'admin')))
-        .catch(() => {});
+    // Un usuario con rol admin (como cualquier otro) sí puede quedar como
+    // responsable o colaborador de un proyecto/tarea real — admin no deja
+    // de ser una persona del equipo solo por tener ese rol. Este selector
+    // solo muestra el nombre (nunca el rol), así que no hace falta filtrar
+    // nada aquí para que el rol admin quede "invisible" en este flujo.
+    if (puedeGestionar) usuariosApi.listar().then(setUsuarios).catch(() => {});
     // Refresco automático cada 2 minutos — mismo intervalo usado en el
     // Gantt (PID sección 7.3), para que el avance de tareas se vea al día
     // sin que el usuario tenga que recargar la página manualmente.

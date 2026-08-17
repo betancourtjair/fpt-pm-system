@@ -27,8 +27,8 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-primary-950">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-card p-8">
-        <div className="flex items-center gap-2 mb-6">
-          <span className="w-3 h-3 rounded-full bg-accent-500" />
+        <div className="flex items-center gap-3 mb-6">
+          <img src="/logo-fpt.png" alt="Fitness Para Todos" className="w-12 h-12 rounded-xl" />
           <h1 className="font-display font-extrabold text-lg text-primary-900">
             FPT · Gestión de Proyectos
           </h1>

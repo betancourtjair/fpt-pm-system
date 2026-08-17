@@ -29,8 +29,9 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
   return (
     <div className="min-h-screen grid grid-cols-[240px_1fr] grid-rows-[64px_1fr]">
       <header className="col-span-2 bg-primary-950 text-white flex items-center justify-between px-6">
-        <div className="flex items-center gap-2 font-display font-extrabold">
-          <span className="w-3 h-3 rounded-full bg-accent-500" /> FPT · Gestión de Proyectos
+        <div className="flex items-center gap-3 font-display font-extrabold">
+          <img src="/logo-fpt.png" alt="Fitness Para Todos" className="w-9 h-9 rounded-lg" />
+          Gestión de Proyectos
         </div>
         <div className="flex items-center gap-4 text-sm">
           <NotificacionesBell />
