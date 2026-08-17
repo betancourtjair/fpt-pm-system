@@ -12,6 +12,12 @@ export class Area {
   @Column({ type: 'varchar', length: 120 })
   nombre: string;
 
+  // Color hex (#RRGGBB) elegido a mano por un admin para distinguir el área
+  // en el Gantt/Proyectos/Dashboard; null = todavía no se ha personalizado,
+  // se usa un default determinístico (ver paleta-colores.ts).
+  @Column({ type: 'varchar', length: 7, nullable: true })
+  color: string | null;
+
   @ManyToOne(() => Direccion, (direccion) => direccion.areas)
   @JoinColumn({ name: 'direccion_id' })
   direccion: Direccion;

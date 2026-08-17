@@ -11,14 +11,29 @@ export function getToken() {
   return localStorage.getItem('fpt_token');
 }
 
+// SESION_MAX_MS respalda, del lado del cliente, el cierre automático de
+// sesión cada 3 horas (ver Layout.tsx) — independiente de JWT_EXPIRES_IN
+// en el backend, que es la misma ventana pero validada en el servidor.
+export const SESION_MAX_MS = 3 * 60 * 60 * 1000;
+
 export function setSession(token: string, usuario: unknown) {
   localStorage.setItem('fpt_token', token);
   localStorage.setItem('fpt_usuario', JSON.stringify(usuario));
+  localStorage.setItem('fpt_login_en', String(Date.now()));
 }
 
 export function clearSession() {
   localStorage.removeItem('fpt_token');
   localStorage.removeItem('fpt_usuario');
+  localStorage.removeItem('fpt_login_en');
+}
+
+// Milisegundos que faltan para cumplir las 3 horas desde el login; 0 si ya
+// se cumplieron (o si por lo que sea no hay marca de tiempo guardada).
+export function msRestantesDeSesion(): number {
+  const loginEn = Number(localStorage.getItem('fpt_login_en'));
+  if (!loginEn) return 0;
+  return Math.max(0, SESION_MAX_MS - (Date.now() - loginEn));
 }
 
 export function getUsuario() {
@@ -49,7 +64,9 @@ api.interceptors.response.use(
 // endpoints para que las páginas no repitan rutas/URLs a mano.
 // ---------------------------------------------------------------------------
 
-export type Direccion = { id: number; nombre: string; areas: { id: number; nombre: string }[] };
+export type AreaConColor = { id: number; nombre: string; direccionId?: number; color: string };
+
+export type Direccion = { id: number; nombre: string; areas: AreaConColor[] };
 
 export type UsuarioResumen = { id: number; nombre: string; email?: string; rol?: string };
 
@@ -62,7 +79,7 @@ export type Proyecto = {
   presupuesto?: number;
   responsable: UsuarioResumen | null;
   creador: UsuarioResumen | null;
-  areas: { id: number; nombre: string; direccionId: number }[];
+  areas: AreaConColor[];
 };
 
 export type Tarea = {
@@ -159,6 +176,11 @@ export type Rol = { id: number; nombre: string; permisos: Record<string, unknown
 export const catalogoApi = {
   direcciones: () => api.get<Direccion[]>('/direcciones').then((r) => r.data),
   roles: () => api.get<Rol[]>('/roles').then((r) => r.data),
+  // Color por Área (PID: "que cada área tenga un color específico"; el
+  // modo admin puede personalizarlo, el resto solo lo lee).
+  areas: () => api.get<AreaConColor[]>('/areas').then((r) => r.data),
+  actualizarColorArea: (areaId: number, color: string) =>
+    api.patch<AreaConColor>(`/areas/${areaId}/color`, { color }).then((r) => r.data),
 };
 
 // ---------------------------------------------------------------------------

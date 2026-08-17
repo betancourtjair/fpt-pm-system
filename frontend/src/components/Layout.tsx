@@ -1,6 +1,6 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { clearSession, getUsuario } from '../lib/api';
+import { clearSession, getUsuario, msRestantesDeSesion } from '../lib/api';
 import { cerrarSocket } from '../lib/socket';
 import NotificacionesBell from './NotificacionesBell';
 
@@ -18,6 +18,21 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
     clearSession();
     navigate('/login');
   }
+
+  // Cierre de sesión automático cada 3 horas (respaldado del lado del
+  // servidor por JWT_EXPIRES_IN — ver auth.module.ts). Se revisa al montar
+  // cada pantalla protegida: si ya se cumplió la ventana, se cierra sesión
+  // de inmediato; si no, se programa el cierre para cuando falte.
+  useEffect(() => {
+    const restante = msRestantesDeSesion();
+    if (restante <= 0) {
+      logout();
+      return;
+    }
+    const temporizador = setTimeout(logout, restante);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const itemClase = (clave: ItemActivo) =>
     `px-6 py-3 block ${

@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS direcciones (
 CREATE TABLE IF NOT EXISTS areas (
   id SERIAL PRIMARY KEY,
   direccion_id INT REFERENCES direcciones(id) NOT NULL,
-  nombre VARCHAR(120) NOT NULL
+  nombre VARCHAR(120) NOT NULL,
+  color VARCHAR(7)
 );
 
 CREATE TABLE IF NOT EXISTS roles (

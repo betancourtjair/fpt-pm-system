@@ -18,6 +18,7 @@ import {
   puedeGestionarProyectos,
   puedeVerPresupuesto,
 } from '../common/permisos.util';
+import { colorEfectivo } from '../catalogo/paleta-colores';
 
 const RELACIONES = { areas: true, responsable: true, creador: true } as const;
 
@@ -108,6 +109,7 @@ export class ProyectosService {
         id: a.id,
         nombre: a.nombre,
         direccionId: a.direccionId,
+        color: colorEfectivo(a),
       })),
     };
     if (puedeVerPresupuesto(user, autorizado)) {

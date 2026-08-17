@@ -126,6 +126,16 @@ recuperación de contraseña desde el login (enlace de un solo uso enviado por
 correo, válido 1 hora, con mensaje de respuesta siempre genérico para no
 revelar qué correos existen en el sistema).
 
+También: logo oficial de FPT en login, recuperación de contraseña, favicon y
+encabezado de la app; en "Proyectos" cualquier parte de la fila navega al
+detalle (no solo el nombre); cada Área tiene un color propio que colorea la
+fila del proyecto y sus chips (por defecto uno de una paleta fija asignada
+por id — ver `backend/src/catalogo/paleta-colores.ts` — personalizable por un
+admin desde el nuevo widget "Proyectos por Área" en el Inicio, que además
+muestra cuántos proyectos hay por cada Área); y cierre de sesión automático
+cada 3 horas (respaldado también del lado del servidor con `JWT_EXPIRES_IN`,
+ver sección 2).
+
 **Importante sobre el remitente de correo (`EMAIL_REMITENTE`):** debe ser una
 dirección `@fpt.com.mx` (el dominio raíz verificado en Resend). El subdominio
 `send.fpt.com.mx` que aparece en el DNS **no** es un dominio de envío válido

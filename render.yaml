@@ -16,7 +16,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
-        value: 8h
+        value: 3h
       - key: CORS_ORIGIN
         sync: false   # dominio del frontend en Netlify, ej. https://tu-sitio.netlify.app
       - key: RESEND_API_KEY

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { catalogoApi, getUsuario, proyectosApi, usuariosApi, Direccion, Proyecto } from '../lib/api';
 
@@ -15,6 +15,7 @@ const ESTATUS_LABEL: Record<string, string> = {
 // pantalla solo decide qué controles mostrar (crear/editar/eliminar).
 export default function Proyectos() {
   const usuario = getUsuario();
+  const navigate = useNavigate();
   const puedeCrear = Boolean(usuario?.permisos?.manage_projects);
 
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
@@ -243,30 +244,50 @@ export default function Proyectos() {
               </tr>
             </thead>
             <tbody>
-              {proyectos.map((p) => (
-                <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-5 py-3">
-                    <Link to={`/proyectos/${p.id}`} className="font-semibold text-primary-700 hover:underline">
-                      {p.nombre}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-gray-600">{p.areas.map((a) => a.nombre).join(', ')}</td>
-                  <td className="px-5 py-3 text-gray-600">{p.responsable?.nombre ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-500">
-                    {p.fechaInicio} → {p.fechaFin}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-xs font-bold uppercase text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
-                      {ESTATUS_LABEL[p.estatus] ?? p.estatus}
-                    </span>
-                  </td>
-                  {'presupuesto' in p && (
-                    <td className="px-5 py-3 text-gray-700">
-                      ${Number(p.presupuesto).toLocaleString('es-MX')}
+              {proyectos.map((p) => {
+                // Color por Área (PID: "que cada área tenga un color
+                // específico") — un proyecto puede tener varias áreas; se
+                // usa la primera como acento visual de la fila y se
+                // muestran todas como chips individuales en su columna.
+                const colorFila = p.areas[0]?.color || '#94a3b8';
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => navigate(`/proyectos/${p.id}`)}
+                    style={{ borderLeft: `4px solid ${colorFila}`, backgroundColor: `${colorFila}14` }}
+                    className="border-t border-gray-100 cursor-pointer transition hover:brightness-[0.97]"
+                  >
+                    <td className="px-5 py-3 font-semibold text-primary-700">{p.nombre}</td>
+                    <td className="px-5 py-3 text-gray-600">
+                      <div className="flex flex-wrap gap-1">
+                        {p.areas.map((a) => (
+                          <span
+                            key={a.id}
+                            className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+                            style={{ backgroundColor: a.color }}
+                          >
+                            {a.nombre}
+                          </span>
+                        ))}
+                      </div>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-5 py-3 text-gray-600">{p.responsable?.nombre ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-500">
+                      {p.fechaInicio} → {p.fechaFin}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="text-xs font-bold uppercase text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
+                        {ESTATUS_LABEL[p.estatus] ?? p.estatus}
+                      </span>
+                    </td>
+                    {'presupuesto' in p && (
+                      <td className="px-5 py-3 text-gray-700">
+                        ${Number(p.presupuesto).toLocaleString('es-MX')}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
               {proyectos.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-8 text-center text-gray-400">

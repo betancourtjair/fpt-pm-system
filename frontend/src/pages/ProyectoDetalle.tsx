@@ -195,9 +195,19 @@ export default function ProyectoDetalle() {
       <div className="flex items-start justify-between mb-2">
         <div>
           <h1 className="font-display font-extrabold text-2xl text-primary-900">{proyecto.nombre}</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {proyecto.areas.map((a) => a.nombre).join(', ')} · {proyecto.fechaInicio} → {proyecto.fechaFin} ·{' '}
-            Responsable: {proyecto.responsable?.nombre ?? '—'}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {proyecto.areas.map((a) => (
+              <span
+                key={a.id}
+                className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+                style={{ backgroundColor: a.color }}
+              >
+                {a.nombre}
+              </span>
+            ))}
+          </div>
+          <p className="text-gray-500 text-sm mt-1.5">
+            {proyecto.fechaInicio} → {proyecto.fechaFin} · Responsable: {proyecto.responsable?.nombre ?? '—'}
           </p>
         </div>
         <div className="flex gap-2">
