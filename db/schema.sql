@@ -87,5 +87,6 @@ CREATE TABLE IF NOT EXISTS alertas_enviadas (
   fecha_enviada TIMESTAMPTZ,
   estatus_envio VARCHAR(20) DEFAULT 'pendiente',
   intentos SMALLINT DEFAULT 0,
+  leido BOOLEAN DEFAULT FALSE, -- notificaciones in-app (Fase 2, PID sección 7)
   UNIQUE (tarea_id, usuario_id, tipo)
 );

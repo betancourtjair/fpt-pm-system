@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AlertaEnviada, TipoAlerta } from '../entities/alerta-enviada.entity';
@@ -48,6 +49,11 @@ export class AlertasService {
     @InjectRepository(Tarea) private readonly tareasRepo: Repository<Tarea>,
     @InjectRepository(Usuario) private readonly usuariosRepo: Repository<Usuario>,
     private readonly email: EmailService,
+    // Notificaciones in-app (Fase 2 completa, PID sección 7): emitimos
+    // 'notificacion.creada' y RealtimeGateway la retransmite por WebSocket
+    // a la room personal del usuario — desacoplado a propósito (este
+    // servicio no conoce ni importa el gateway).
+    private readonly eventos: EventEmitter2,
   ) {}
 
   // Llamado desde TareasService cuando se crea una tarea o cuando una
@@ -196,6 +202,20 @@ export class AlertasService {
     if (insertado.raw.length === 0) {
       return false;
     }
+
+    // Se emite ya mismo, independiente de si el correo se logra mandar o
+    // no más abajo — la notificación in-app es la red de seguridad cuando
+    // Resend falla o el tope diario se alcanza (ver EmailService).
+    this.eventos.emit('notificacion.creada', {
+      usuarioId: args.usuarioId,
+      notificacion: {
+        id: insertado.raw[0].id as number,
+        tipo: args.tipo,
+        tareaId: args.tareaId,
+        tareaNombre: args.datosTarea.nombre,
+        fechaProgramada: new Date(),
+      },
+    });
 
     const asunto =
       args.tipo === 'asignacion'

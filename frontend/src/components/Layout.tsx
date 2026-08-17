@@ -1,6 +1,8 @@
 import { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { clearSession, getUsuario } from '../lib/api';
+import { cerrarSocket } from '../lib/socket';
+import NotificacionesBell from './NotificacionesBell';
 
 type ItemActivo = 'inicio' | 'proyectos' | 'gantt' | 'usuarios';
 
@@ -12,6 +14,7 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
   const navigate = useNavigate();
 
   function logout() {
+    cerrarSocket();
     clearSession();
     navigate('/login');
   }
@@ -30,6 +33,7 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
           <span className="w-3 h-3 rounded-full bg-accent-500" /> FPT · Gestión de Proyectos
         </div>
         <div className="flex items-center gap-4 text-sm">
+          <NotificacionesBell />
           <span>
             {usuario?.nombre} · <span className="text-primary-300">{usuario?.rol}</span>
           </span>
@@ -54,7 +58,6 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
             Usuarios
           </Link>
         )}
-        <div className="px-6 py-3 text-primary-200 opacity-60">Notificaciones (Fase 2)</div>
       </nav>
 
       <main className="p-8 bg-[#F4F2F8] overflow-auto">{children}</main>

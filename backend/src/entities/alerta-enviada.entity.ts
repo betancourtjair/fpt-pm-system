@@ -41,4 +41,11 @@ export class AlertaEnviada {
 
   @Column({ type: 'smallint', default: 0 })
   intentos: number;
+
+  // Notificaciones dentro de la app (Fase 2, PID sección 7): reutilizamos
+  // esta misma fila como notificación in-app — "leido" es independiente de
+  // estatusEnvio, así que si el correo falló la persona igual la ve como
+  // no leída dentro del sistema (ver NotificacionesController).
+  @Column({ type: 'boolean', default: false })
+  leido: boolean;
 }

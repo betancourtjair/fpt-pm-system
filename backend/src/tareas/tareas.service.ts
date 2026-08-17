@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Tarea } from '../entities/tarea.entity';
@@ -34,6 +35,11 @@ export class TareasService {
     // Alerta "asignacion" (Fase 2, PID sección 7) — se dispara solo para
     // quien se agrega de nuevo, nunca para quien ya estaba asignado.
     private readonly alertas: AlertasService,
+    // Tiempo real del Gantt (Fase 2 completa): cada creación/edición/borrado
+    // de tarea emite 'tarea.cambio' y RealtimeGateway lo retransmite por
+    // WebSocket a quienes estén viendo ese proyecto — desacoplado a
+    // propósito, este servicio no conoce el gateway.
+    private readonly eventos: EventEmitter2,
   ) {}
 
   // Nunca debe tronar la creación/actualización de una tarea por un
@@ -46,6 +52,10 @@ export class TareasService {
       // Ya se registró en el log de AlertasService/EmailService; aquí no
       // hay nada más que hacer.
     }
+  }
+
+  private emitirCambio(proyectoId: number, tareaId: number, accion: 'creada' | 'actualizada' | 'eliminada') {
+    this.eventos.emit('tarea.cambio', { proyectoId, tareaId, accion });
   }
 
   private serializar(tarea: Tarea, user: JwtPayload, autorizado: boolean) {
@@ -165,6 +175,7 @@ export class TareasService {
       (id): id is number => Boolean(id),
     );
     await this.notificarAsignacionSinRomper(guardada.id, asignadosIniciales);
+    this.emitirCambio(proyectoId, guardada.id, 'creada');
 
     return this.obtener(guardada.id, user);
   }
@@ -225,6 +236,7 @@ export class TareasService {
     if (nuevosAsignados.length > 0) {
       await this.notificarAsignacionSinRomper(id, nuevosAsignados);
     }
+    this.emitirCambio(tarea.proyectoId, id, 'actualizada');
 
     return this.obtener(id, user);
   }
@@ -242,6 +254,7 @@ export class TareasService {
     if (dto.estatus !== undefined) tarea.estatus = dto.estatus;
     if (dto.porcentajeAvance !== undefined) tarea.porcentajeAvance = dto.porcentajeAvance;
     await this.tareas.save(tarea);
+    this.emitirCambio(tarea.proyectoId, id, 'actualizada');
     return this.obtener(id, user);
   }
 
@@ -254,6 +267,7 @@ export class TareasService {
     await this.tareas.query(`UPDATE tareas SET dependencia_id = NULL WHERE dependencia_id = $1`, [id]);
     await this.tareas.query(`DELETE FROM tarea_usuarios WHERE tarea_id = $1`, [id]);
     await this.tareas.remove(tarea);
+    this.emitirCambio(tarea.proyectoId, id, 'eliminada');
     return { ok: true };
   }
 }

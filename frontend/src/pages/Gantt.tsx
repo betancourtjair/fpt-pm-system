@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import { proyectosApi, tareasApi, Proyecto, Tarea } from '../lib/api';
+import { getSocket } from '../lib/socket';
 
 const COLOR_ESTATUS: Record<string, string> = {
   no_iniciada: '#BB94E2',
@@ -52,9 +53,27 @@ export default function Gantt() {
   useEffect(() => {
     if (proyectoId === null) return;
     cargarTareas(proyectoId);
-    // Auto-refresco cada 2 minutos, como especifica el PID sección 7.3.
+    // Auto-refresco cada 2 minutos, como especifica el PID sección 7.3 — se
+    // conserva como respaldo aunque ya haya WebSockets: si el socket se cae
+    // (red restrictiva, cold start de Render, etc.) el Gantt igual se pone
+    // al día solo, sin que la persona tenga que recargar la página a mano.
     const intervalo = setInterval(() => cargarTareas(proyectoId), 2 * 60 * 1000);
-    return () => clearInterval(intervalo);
+
+    // Tiempo real (Fase 2 completa): se une a la room del proyecto y se
+    // refresca al instante cuando alguien más crea/edita/borra una tarea,
+    // en vez de esperar hasta 2 minutos a que llegue el polling de respaldo.
+    const socket = getSocket();
+    socket.emit('unirse-proyecto', { proyectoId });
+    const alCambiarTarea = (evento: { proyectoId: number }) => {
+      if (evento.proyectoId === proyectoId) cargarTareas(proyectoId);
+    };
+    socket.on('tarea:cambio', alCambiarTarea);
+
+    return () => {
+      clearInterval(intervalo);
+      socket.emit('salir-proyecto', { proyectoId });
+      socket.off('tarea:cambio', alCambiarTarea);
+    };
   }, [proyectoId]);
 
   const { minDia, rango, filas } = useMemo(() => {
@@ -86,7 +105,7 @@ export default function Gantt() {
         <div className="flex items-center gap-3">
           {ultimaActualizacion && (
             <span className="text-xs text-gray-400">
-              Actualizado {ultimaActualizacion.toLocaleTimeString('es-MX')} · se refresca cada 2 min
+              Actualizado {ultimaActualizacion.toLocaleTimeString('es-MX')} · en vivo (respaldo cada 2 min)
             </span>
           )}
           <select

@@ -18,6 +18,9 @@ import { Usuario } from '../entities/usuario.entity';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  // JwtModule también se exporta: RealtimeModule (Fase 2, WebSockets) lo
+  // necesita para validar el token del handshake de Socket.IO con el mismo
+  // JwtService/secreto que ya usa la API REST, sin duplicar configuración.
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

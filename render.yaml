@@ -22,6 +22,9 @@ services:
       - key: RESEND_API_KEY
         sync: false   # Fase 2 (alertas) — key de Resend, "Sending access". Vacío = alertas quedan "fallido", el resto del sistema sigue normal.
       - key: EMAIL_REMITENTE
-        value: "Notificaciones FPT <notificaciones@send.fpt.com.mx>"
+        # @fpt.com.mx (dominio raíz verificado en Resend) — NUNCA
+        # @send.fpt.com.mx, ese subdominio es solo el Return-Path/bounce
+        # interno (MX+TXT) y no está verificado como remitente.
+        value: "Notificaciones FPT <notificaciones@fpt.com.mx>"
       - key: FRONTEND_URL
         sync: false   # URL pública del frontend en Netlify, ej. https://tu-sitio.netlify.app — se usa en el botón de los correos de alerta

@@ -1,10 +1,10 @@
 # Sistema de Gestión de Proyectos — Fitness Para Todos
 
-Primer montado del sistema: backend (NestJS + TypeORM + PostgreSQL) y frontend
-(React + Vite + TailwindCSS) con login, JWT, control de acceso por rol (RBAC)
-y lectura del catálogo de Direcciones/Áreas/Roles. Cubre la Fase 0 del roadmap
-del PID. Los módulos de Proyectos, Tareas, Gantt y Alertas se construyen en las
-Fases 1 y 2 (ver PID, sección 7).
+Backend (NestJS + TypeORM + PostgreSQL) y frontend (React + Vite +
+TailwindCSS) con login, JWT, control de acceso por rol (RBAC), catálogo de
+Direcciones/Áreas/Roles, Proyectos/Tareas con Gantt, alertas por correo
+(Resend) y tiempo real por WebSocket. Cubre las Fases 0, 1 y 2 completas del
+roadmap del PID (ver PID, sección 7).
 
 Todo lo de este repositorio ya se probó de punta a punta contra una base de
 datos PostgreSQL real antes de entregarse: creación de tablas, siembra de
@@ -101,17 +101,33 @@ git push -u origin main
 El repositorio ya existe y está vacío (`betancourtjair/fpt-pm-system`), así que
 estos comandos son suficientes — no hace falta crear nada desde la web.
 
-## 4. Qué SÍ y qué NO incluye este primer montado
+## 4. Qué SÍ y qué NO incluye (estado actual: Fases 0-2 completas)
 
 Incluye: login con JWT, cambio de contraseña obligatorio (`must_change_password`),
-guard de roles (`@Roles(...)`) probado contra el catálogo real (4 roles, 7
-Direcciones, 13 Áreas, 3 usuarios ya cargados), lectura del catálogo desde el
-frontend, identidad visual Planet Fitness aplicada (Tailwind + tipografías).
+guard de roles (`@Roles(...)`) probado contra el catálogo real, lectura del
+catálogo desde el frontend, identidad visual Planet Fitness (Tailwind +
+tipografías), CRUD de Proyectos/Tareas con visibilidad por Área/Dirección,
+Gantt de solo lectura con exportación a PDF (impresión nativa), alertas por
+correo (asignación + recordatorios de 48h/24h vía Resend, con control de
+duplicados en `alertas_enviadas`), tiempo real por WebSocket (Socket.IO) para
+que el Gantt se actualice al instante entre usuarios que ven el mismo
+proyecto —con el refresco cada 2 minutos como respaldo si el socket se cae—,
+y notificaciones dentro de la app (campanita en el sidebar, reutiliza la
+misma tabla de alertas).
 
-No incluye todavía (Fase 1-2 del roadmap): módulo de Proyectos/Tareas, el
-Gantt interactivo, WebSockets en tiempo real, ni el envío de alertas por
-correo. La base de datos y las entidades ya están listas para esos módulos
-(`proyectos`, `tareas`, `alertas_enviadas` ya existen en `db/schema.sql`).
+**Importante sobre el remitente de correo (`EMAIL_REMITENTE`):** debe ser una
+dirección `@fpt.com.mx` (el dominio raíz verificado en Resend). El subdominio
+`send.fpt.com.mx` que aparece en el DNS **no** es un dominio de envío válido
+— sus registros MX/TXT son solo el Return-Path/bounce interno que usa
+Resend/SES. Usarlo como remitente hace que Resend rechace el correo con
+"domain is not verified" (nos pasó en producción y quedó documentado en
+`email.service.ts`).
+
+No incluye todavía (Fase 3 en adelante del roadmap): edición drag-and-drop de
+fechas/dependencias en el Gantt, filtros avanzados, dashboards de presupuesto
+vs. avance, permisos granulares adicionales, ni hardening de seguridad más
+allá de lo ya implementado (JWT, RBAC, cambio de contraseña obligatorio). El
+roadmap completo con las 6 fases está en el PID, sección 7.
 
 ## 5. Seguridad — antes de invitar usuarios reales
 

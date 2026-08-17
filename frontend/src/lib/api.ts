@@ -133,3 +133,24 @@ export const catalogoApi = {
   direcciones: () => api.get<Direccion[]>('/direcciones').then((r) => r.data),
   roles: () => api.get<Rol[]>('/roles').then((r) => r.data),
 };
+
+// ---------------------------------------------------------------------------
+// Fase 2 completa (PID sección 7): notificaciones dentro de la app.
+// Reutilizan la misma tabla que las alertas por correo — cada quien ve
+// únicamente las suyas (sin importar el rol).
+// ---------------------------------------------------------------------------
+
+export type Notificacion = {
+  id: number;
+  tipo: 'asignacion' | '48h' | '24h';
+  tarea: { id: number; nombre: string } | null;
+  fechaProgramada: string;
+  leido: boolean;
+};
+
+export const notificacionesApi = {
+  listar: () =>
+    api.get<{ notificaciones: Notificacion[]; noLeidas: number }>('/notificaciones').then((r) => r.data),
+  marcarLeida: (id: number) => api.patch(`/notificaciones/${id}/leido`).then((r) => r.data),
+  marcarTodasLeidas: () => api.patch('/notificaciones/leer-todas').then((r) => r.data),
+};
