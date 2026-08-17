@@ -115,6 +115,47 @@ export class UsuariosService {
     return usuarios.map((u) => this.serializar(u));
   }
 
+  // Vista de carga de trabajo (tercera ronda de mejoras, ver README sección
+  // 4): cuántas tareas activas (no completadas) trae cada persona del
+  // equipo, cruzando TODOS sus proyectos — para que un Manager/Director
+  // detecte quién está saturado antes de asignarle algo más. El universo de
+  // personas es el mismo que ya ve /usuarios (alcance por rol); los conteos
+  // de tareas NO se limitan a un proyecto, es la carga total de la persona.
+  async cargaTrabajo(user: JwtPayload) {
+    const usuarios = await this.listar(user);
+    if (usuarios.length === 0) return [];
+
+    const ids = usuarios.map((u) => u.id);
+    const filas: { usuario_id: number; activas: string; vencidas: string }[] = await this.usuarios.query(
+      `SELECT usuario_id, COUNT(DISTINCT tarea_id) AS activas,
+              COUNT(DISTINCT CASE WHEN fecha_fin < CURRENT_DATE THEN tarea_id END) AS vencidas
+       FROM (
+         SELECT id AS tarea_id, responsable_id AS usuario_id, fecha_fin, estatus
+         FROM tareas WHERE estatus <> 'completada' AND responsable_id IS NOT NULL
+         UNION
+         SELECT t.id, tu.usuario_id, t.fecha_fin, t.estatus
+         FROM tareas t JOIN tarea_usuarios tu ON tu.tarea_id = t.id
+         WHERE t.estatus <> 'completada'
+       ) x
+       WHERE usuario_id = ANY($1)
+       GROUP BY usuario_id`,
+      [ids],
+    );
+    const porUsuario = new Map(filas.map((f) => [f.usuario_id, { activas: Number(f.activas), vencidas: Number(f.vencidas) }]));
+
+    return usuarios
+      .map((u) => ({
+        id: u.id,
+        nombre: u.nombre,
+        rol: u.rol,
+        area: u.area,
+        direccion: u.direccion,
+        tareasActivas: porUsuario.get(u.id)?.activas ?? 0,
+        tareasVencidas: porUsuario.get(u.id)?.vencidas ?? 0,
+      }))
+      .sort((a, b) => b.tareasActivas - a.tareasActivas);
+  }
+
   async obtenerEntidad(id: number): Promise<Usuario> {
     const usuario = await this.usuarios.findOne({ where: { id }, relations: RELACIONES });
     if (!usuario) throw new NotFoundException('Usuario no encontrado.');

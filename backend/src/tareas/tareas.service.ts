@@ -17,13 +17,23 @@ import { ReasignarMasivoDto } from './dto/reasignar-masivo.dto';
 import { puedeVerPresupuesto } from '../common/permisos.util';
 import { AlertasService } from '../alertas/alertas.service';
 import { generarExcelTareas } from '../common/excel-export.util';
+import { AutomatizacionesService } from '../automatizaciones/automatizaciones.service';
+import { ActividadService } from '../actividad/actividad.service';
 
 const RELACIONES = {
   proyecto: true,
   responsable: true,
-  dependencia: true,
+  dependencias: true,
   usuariosAsignados: true,
 } as const;
+
+// Duración en días de cada tipo de recurrencia (cuarta ronda de mejoras) —
+// "mensual" se resuelve aparte porque sumar días fijos no respeta meses de
+// distinta longitud (ver generarSiguienteOcurrencia).
+const DIAS_POR_TIPO_RECURRENCIA: Record<string, number> = {
+  diaria: 1,
+  semanal: 7,
+};
 
 @Injectable()
 export class TareasService {
@@ -42,6 +52,13 @@ export class TareasService {
     // WebSocket a quienes estén viendo ese proyecto — desacoplado a
     // propósito, este servicio no conoce el gateway.
     private readonly eventos: EventEmitter2,
+    // Automatizaciones configurables por el usuario (tercera ronda de
+    // mejoras, ver README sección 4) — se evalúan además de las 2 reglas
+    // fijas de aplicarAutomatizaciones() más abajo.
+    private readonly automatizaciones: AutomatizacionesService,
+    // Bitácora de actividad (tercera ronda de mejoras) — registra cada
+    // cambio de estatus/responsable/prioridad para la pestaña "Actividad".
+    private readonly actividad: ActividadService,
   ) {}
 
   // Nunca debe tronar la creación/actualización de una tarea por un
@@ -67,8 +84,101 @@ export class TareasService {
     }
   }
 
+  // Automatizaciones configurables (tercera ronda de mejoras): igual
+  // blindaje que las notificaciones fijas — una regla mal configurada o un
+  // error de red nunca debe tronar el guardado de la tarea en sí.
+  private async evaluarAutomatizacionesSinRomper(
+    proyectoId: number,
+    tareaId: number,
+    tareaNombre: string,
+    responsableIdFinal: number | null,
+    antes: { estatus: string; prioridad: string; fechaFin: string },
+    despues: { estatus: string; prioridad: string; fechaFin: string },
+  ) {
+    try {
+      await this.automatizaciones.evaluarTransicion(proyectoId, tareaId, tareaNombre, responsableIdFinal, antes, despues);
+    } catch {
+      // Sin log adicional aquí a propósito: AutomatizacionesService no
+      // lanza en condiciones normales (todas sus validaciones viven en
+      // crear/actualizar, no en evaluarTransicion) — esto es solo blindaje.
+    }
+  }
+
   private emitirCambio(proyectoId: number, tareaId: number, accion: 'creada' | 'actualizada' | 'eliminada') {
     this.eventos.emit('tarea.cambio', { proyectoId, tareaId, accion });
+  }
+
+  // Tareas recurrentes (cuarta ronda de mejoras, ver README sección 4): al
+  // completarse una tarea con recurrencia activa, se crea sola la siguiente
+  // ocurrencia con las mismas fechas desplazadas. Nunca debe tronar el
+  // guardado de la tarea que se acaba de completar — mismo criterio que el
+  // resto de los "...SinRomper" de este servicio.
+  private async generarSiguienteOcurrenciaSinRomper(
+    tareaBase: Tarea,
+    fechaInicioBase: string,
+    fechaFinBase: string,
+  ) {
+    if (!tareaBase.recurrenciaTipo || !tareaBase.recurrenciaActiva) return;
+    try {
+      const intervalo = tareaBase.recurrenciaIntervalo || 1;
+      const fechaInicioNueva = this.desplazarPorRecurrencia(
+        fechaInicioBase,
+        tareaBase.recurrenciaTipo,
+        intervalo,
+      );
+      const fechaFinNueva = this.desplazarPorRecurrencia(fechaFinBase, tareaBase.recurrenciaTipo, intervalo);
+
+      // Las dependencias NO se copian a propósito: la predecesora de esta
+      // ocurrencia ya se completó una vez, así que la siguiente arranca
+      // libre — copiarlas dejaría a la nueva tarea esperando para siempre
+      // (o esperando a una tarea que ya no representa lo mismo).
+      const nueva = this.tareas.create({
+        proyectoId: tareaBase.proyectoId,
+        nombre: tareaBase.nombre,
+        fechaInicio: fechaInicioNueva,
+        fechaFin: fechaFinNueva,
+        presupuesto: tareaBase.presupuesto,
+        responsableId: tareaBase.responsableId,
+        prioridad: tareaBase.prioridad,
+        etiquetas: tareaBase.etiquetas ?? [],
+        recurrenciaTipo: tareaBase.recurrenciaTipo,
+        recurrenciaIntervalo: intervalo,
+        recurrenciaActiva: true,
+        creadoEn: new Date(),
+      });
+      const guardada = await this.tareas.save(nueva);
+
+      const asignados: { usuario_id: number }[] = await this.tareas.query(
+        `SELECT usuario_id FROM tarea_usuarios WHERE tarea_id = $1`,
+        [tareaBase.id],
+      );
+      for (const a of asignados) {
+        await this.tareas.query(
+          `INSERT INTO tarea_usuarios (tarea_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [guardada.id, a.usuario_id],
+        );
+      }
+
+      this.emitirCambio(tareaBase.proyectoId, guardada.id, 'creada');
+    } catch {
+      // Blindaje: una recurrencia mal configurada nunca debe impedir que la
+      // tarea actual se marque como completada.
+    }
+  }
+
+  // "mensual" no se puede resolver sumando días fijos (los meses no todos
+  // duran lo mismo) — Date.UTC normaliza solo el desbordamiento de mes/año;
+  // el desbordamiento de día (ej. 31 de enero + 1 mes) queda a su criterio
+  // nativo, comportamiento conocido y documentado en el README.
+  private desplazarPorRecurrencia(fechaISO: string, tipo: string, intervalo: number): string {
+    const [anio, mes, dia] = fechaISO.split('-').map((v) => parseInt(v, 10));
+    if (tipo === 'mensual') {
+      const fecha = new Date(Date.UTC(anio, mes - 1 + intervalo, dia));
+      return fecha.toISOString().slice(0, 10);
+    }
+    const dias = (DIAS_POR_TIPO_RECURRENCIA[tipo] ?? 1) * intervalo;
+    const fecha = new Date(Date.UTC(anio, mes - 1, dia) + dias * 86400000);
+    return fecha.toISOString().slice(0, 10);
   }
 
   private serializar(tarea: Tarea, user: JwtPayload, autorizado: boolean) {
@@ -81,13 +191,19 @@ export class TareasService {
       estatus: tarea.estatus,
       porcentajeAvance: tarea.porcentajeAvance,
       prioridad: tarea.prioridad,
+      etiquetas: tarea.etiquetas ?? [],
       responsable: tarea.responsable
         ? { id: tarea.responsable.id, nombre: tarea.responsable.nombre }
         : null,
-      dependenciaId: tarea.dependenciaId,
-      dependencia: tarea.dependencia
-        ? { id: tarea.dependencia.id, nombre: tarea.dependencia.nombre }
-        : null,
+      // Dependencias múltiples (cuarta ronda de mejoras) — reemplaza el
+      // dependenciaId/dependencia singular original.
+      dependencias: (tarea.dependencias ?? []).map((d) => ({ id: d.id, nombre: d.nombre })),
+      // Tareas recurrentes (cuarta ronda de mejoras).
+      recurrenciaTipo: tarea.recurrenciaTipo,
+      recurrenciaIntervalo: tarea.recurrenciaIntervalo,
+      recurrenciaActiva: tarea.recurrenciaActiva,
+      creadoEn: tarea.creadoEn,
+      completadaEn: tarea.completadaEn,
       usuariosAsignados: (tarea.usuariosAsignados ?? []).map((u) => ({
         id: u.id,
         nombre: u.nombre,
@@ -144,7 +260,7 @@ export class TareasService {
       fechaFin: t.fechaFin,
       responsable: t.responsable?.nombre ?? '—',
       asignados: (t.usuariosAsignados ?? []).map((u: any) => u.nombre).join(', ') || '—',
-      dependeDe: t.dependencia?.nombre ?? '—',
+      dependeDe: (t.dependencias ?? []).map((d: any) => d.nombre).join(', ') || '—',
       estatus: t.estatus,
       porcentajeAvance: t.porcentajeAvance,
       presupuesto: t.presupuesto,
@@ -169,48 +285,74 @@ export class TareasService {
     }
   }
 
-  private async validarDependencia(
+  // Dependencias múltiples (cuarta ronda de mejoras, ver README sección 4):
+  // esta tarea espera a que TODAS las de `dependeDeIds` terminen antes de
+  // poder iniciar. Reemplaza la validación de dependencia simple original,
+  // que solo revisaba una cadena lineal — ahora el grafo puede tener varios
+  // padres por tarea, así que el chequeo de ciclos necesita recorrer todo
+  // el subgrafo de "quién depende de esta tarea" (ver CTE recursivo abajo).
+  private async validarDependencias(
     proyectoId: number,
-    dependenciaId: number,
+    dependeDeIds: number[],
     fechaInicioTarea: string,
     tareaId?: number,
   ) {
-    if (dependenciaId === tareaId) {
+    const idsUnicos = [...new Set(dependeDeIds)];
+    if (idsUnicos.includes(tareaId as number)) {
       throw new BadRequestException('Una tarea no puede depender de sí misma.');
     }
-    const predecesora = await this.tareas.findOne({ where: { id: dependenciaId } });
-    if (!predecesora || predecesora.proyectoId !== proyectoId) {
-      throw new BadRequestException('La tarea predecesora debe pertenecer al mismo proyecto.');
+    if (idsUnicos.length === 0) return;
+
+    const predecesoras = await this.tareas.find({ where: { id: In(idsUnicos) } });
+    if (predecesoras.length !== idsUnicos.length || predecesoras.some((p) => p.proyectoId !== proyectoId)) {
+      throw new BadRequestException('Todas las tareas predecesoras deben existir y pertenecer al mismo proyecto.');
     }
-    // Consistencia de fechas (comentario original del entity ya lo decía:
-    // "esta tarea no puede iniciar hasta que termine su predecesora" — pero
-    // nunca se validaba). Comparación lexicográfica válida: ambas son
-    // columnas DATE en formato 'YYYY-MM-DD'.
-    if (predecesora.fechaFin > fechaInicioTarea) {
+
+    // Consistencia de fechas: ninguna predecesora puede terminar después de
+    // que esta tarea empiece (comparación lexicográfica válida: son
+    // columnas DATE en formato 'YYYY-MM-DD').
+    const tardia = predecesoras.find((p) => p.fechaFin > fechaInicioTarea);
+    if (tardia) {
       throw new BadRequestException(
-        'Esta tarea no puede iniciar antes de que termine su tarea predecesora.',
+        `Esta tarea no puede iniciar antes de que termine su predecesora "${tardia.nombre}".`,
       );
     }
 
-    // Ciclo de dependencias (directo o en cadena): si al recorrer la cadena
-    // de predecesoras desde `predecesora` llegamos de nuevo a `tareaId`,
-    // asignar esta dependencia dejaría dos tareas esperándose mutuamente.
-    // Solo aplica al editar — una tarea recién creada no puede aparecer
-    // todavía en ninguna cadena existente.
+    // Ciclo de dependencias (directo o en cadena, con varios padres
+    // posibles por tarea): si alguna de las nuevas predecesoras ya depende
+    // — directa o transitivamente — de `tareaId`, agregar esta dependencia
+    // dejaría dos tareas esperándose mutuamente. Solo aplica al editar; una
+    // tarea recién creada no puede aparecer todavía en ningún ciclo.
     if (tareaId !== undefined) {
-      let actual: Tarea | null = predecesora;
-      const visitadas = new Set<number>();
-      while (actual && !visitadas.has(actual.id)) {
-        if (actual.id === tareaId) {
-          throw new BadRequestException(
-            'Esta dependencia crearía un ciclo entre tareas (dependencia circular).',
-          );
-        }
-        visitadas.add(actual.id);
-        actual = actual.dependenciaId
-          ? await this.tareas.findOne({ where: { id: actual.dependenciaId } })
-          : null;
+      const descendientes: { tarea_id: number }[] = await this.tareas.query(
+        `WITH RECURSIVE descendientes AS (
+           SELECT tarea_id FROM tarea_dependencias WHERE depende_de_id = $1
+           UNION
+           SELECT td.tarea_id FROM tarea_dependencias td
+           JOIN descendientes d ON td.depende_de_id = d.tarea_id
+         )
+         SELECT tarea_id FROM descendientes`,
+        [tareaId],
+      );
+      const idsDescendientes = new Set(descendientes.map((d) => d.tarea_id));
+      const enCiclo = predecesoras.find((p) => idsDescendientes.has(p.id));
+      if (enCiclo) {
+        throw new BadRequestException(
+          `Esta dependencia crearía un ciclo entre tareas (dependencia circular) con "${enCiclo.nombre}".`,
+        );
       }
+    }
+  }
+
+  // Reemplaza por completo el conjunto de predecesoras de una tarea —
+  // usado tanto al crear (fila vacía de por medio) como al editar.
+  private async reemplazarDependencias(tareaId: number, dependeDeIds: number[]) {
+    await this.tareas.query(`DELETE FROM tarea_dependencias WHERE tarea_id = $1`, [tareaId]);
+    for (const dependeDeId of new Set(dependeDeIds)) {
+      await this.tareas.query(
+        `INSERT INTO tarea_dependencias (tarea_id, depende_de_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [tareaId, dependeDeId],
+      );
     }
   }
 
@@ -236,8 +378,8 @@ export class TareasService {
     if (!responsable) throw new NotFoundException('El responsable indicado no existe.');
     if (dto.usuarioIds?.length) await this.validarUsuarios(dto.usuarioIds);
     this.validarFechas(dto.fechaInicio, dto.fechaFin);
-    if (dto.dependenciaId !== undefined) {
-      await this.validarDependencia(proyectoId, dto.dependenciaId, dto.fechaInicio);
+    if (dto.dependeDeIds?.length) {
+      await this.validarDependencias(proyectoId, dto.dependeDeIds, dto.fechaInicio);
     }
 
     const tarea = this.tareas.create({
@@ -247,11 +389,15 @@ export class TareasService {
       fechaFin: dto.fechaFin,
       presupuesto: dto.presupuesto !== undefined ? String(dto.presupuesto) : null,
       responsableId: dto.responsableId,
-      dependenciaId: dto.dependenciaId ?? null,
       prioridad: dto.prioridad ?? 'media',
+      etiquetas: dto.etiquetas ?? [],
+      recurrenciaTipo: dto.recurrenciaTipo ?? null,
+      recurrenciaIntervalo: dto.recurrenciaIntervalo ?? 1,
+      creadoEn: new Date(),
     });
     const guardada = await this.tareas.save(tarea);
     if (dto.usuarioIds?.length) await this.asignarUsuarios(guardada.id, dto.usuarioIds);
+    if (dto.dependeDeIds?.length) await this.reemplazarDependencias(guardada.id, dto.dependeDeIds);
 
     // Alerta "asignacion" (Fase 2): todos los que quedan asignados desde
     // el arranque (responsable + usuariosAsignados) reciben el correo.
@@ -259,6 +405,7 @@ export class TareasService {
       (id): id is number => Boolean(id),
     );
     await this.notificarAsignacionSinRomper(guardada.id, asignadosIniciales);
+    await this.actividad.registrar(guardada.id, user.sub, 'creacion', 'Creó la tarea.');
     this.emitirCambio(proyectoId, guardada.id, 'creada');
 
     return this.obtener(guardada.id, user);
@@ -295,13 +442,14 @@ export class TareasService {
     if (dto.fechaInicio !== undefined || dto.fechaFin !== undefined) {
       this.validarFechas(fechaInicioFinal, fechaFinFinal);
     }
-    // Si cambia la dependencia, o solo cambia fechaInicio pero la tarea ya
-    // tenía una predecesora, hay que re-checar contra ella (podría quedar
-    // iniciando antes de que termine, aunque la dependencia en sí no haya
-    // cambiado).
-    const dependenciaIdFinal = dto.dependenciaId !== undefined ? dto.dependenciaId : tarea.dependenciaId;
-    if (dependenciaIdFinal !== null && (dto.dependenciaId !== undefined || dto.fechaInicio !== undefined)) {
-      await this.validarDependencia(tarea.proyectoId, dependenciaIdFinal, fechaInicioFinal, id);
+    // Si cambian las dependencias, o solo cambia fechaInicio pero la tarea
+    // ya tenía predecesoras, hay que re-checar contra ellas (podría quedar
+    // iniciando antes de que terminen, aunque las dependencias en sí no
+    // hayan cambiado).
+    const dependeDeIdsFinal =
+      dto.dependeDeIds !== undefined ? dto.dependeDeIds : (tarea.dependencias ?? []).map((d) => d.id);
+    if (dependeDeIdsFinal.length > 0 && (dto.dependeDeIds !== undefined || dto.fechaInicio !== undefined)) {
+      await this.validarDependencias(tarea.proyectoId, dependeDeIdsFinal, fechaInicioFinal, id);
     }
 
     // IMPORTANTE: UPDATE dirigido, no tarea.save() — `tarea` se cargó con
@@ -317,8 +465,11 @@ export class TareasService {
     if (dto.estatus !== undefined) cambios.estatus = dto.estatus;
     if (dto.porcentajeAvance !== undefined) cambios.porcentajeAvance = dto.porcentajeAvance;
     if (dto.responsableId !== undefined) cambios.responsableId = dto.responsableId;
-    if (dto.dependenciaId !== undefined) cambios.dependenciaId = dto.dependenciaId;
     if (dto.prioridad !== undefined) cambios.prioridad = dto.prioridad;
+    if (dto.etiquetas !== undefined) cambios.etiquetas = dto.etiquetas;
+    if (dto.recurrenciaTipo !== undefined) cambios.recurrenciaTipo = dto.recurrenciaTipo;
+    if (dto.recurrenciaIntervalo !== undefined) cambios.recurrenciaIntervalo = dto.recurrenciaIntervalo;
+    if (dto.recurrenciaActiva !== undefined) cambios.recurrenciaActiva = dto.recurrenciaActiva;
     // Automatizaciones simples (ver aplicarAutomatizaciones más abajo) —
     // aquí se aplican sobre el objeto `cambios` porque este flujo hace un
     // UPDATE dirigido en vez de tarea.save() (ver comentario arriba).
@@ -332,17 +483,53 @@ export class TareasService {
     // solo dispara en la transición hacia "bloqueada", nunca en cada
     // guardado subsecuente mientras la tarea sigue bloqueada.
     const pasaABloqueada = cambios.estatus === 'bloqueada' && tarea.estatus !== 'bloqueada';
+    // Estado final (tercera ronda de mejoras): tanto las automatizaciones
+    // configurables como la bitácora de actividad necesitan comparar el
+    // "antes" contra el "después" de estatus/prioridad/fechaFin/responsable.
+    const estatusFinal = (cambios.estatus as string | undefined) ?? tarea.estatus;
+    const prioridadFinal = (cambios.prioridad as string | undefined) ?? tarea.prioridad;
+    const responsableFinal = dto.responsableId !== undefined ? dto.responsableId : tarea.responsableId;
+    // Métricas para reportes ejecutivos (cuarta ronda de mejoras): se marca
+    // completadaEn justo al entrar a "completada" y se limpia si se vuelve
+    // a abrir la tarea — así el reporte nunca cuenta como "completada a
+    // tiempo" una tarea que se reabrió después.
+    const entraACompletada = estatusFinal === 'completada' && tarea.estatus !== 'completada';
+    const saleDeCompletada = estatusFinal !== 'completada' && tarea.estatus === 'completada';
+    if (entraACompletada) cambios.completadaEn = new Date();
+    else if (saleDeCompletada) cambios.completadaEn = null;
     if (Object.keys(cambios).length > 0) {
       await this.tareas.update(id, cambios);
     }
+    if (dto.dependeDeIds !== undefined) {
+      await this.reemplazarDependencias(id, dto.dependeDeIds);
+    }
     if (pasaABloqueada) {
       await this.notificarBloqueoSinRomper(id);
+    }
+    if (entraACompletada) {
+      await this.generarSiguienteOcurrenciaSinRomper(tarea, fechaInicioFinal, fechaFinFinal);
+    }
+    await this.evaluarAutomatizacionesSinRomper(
+      tarea.proyectoId,
+      id,
+      dto.nombre ?? tarea.nombre,
+      responsableFinal,
+      { estatus: tarea.estatus, prioridad: tarea.prioridad, fechaFin: tarea.fechaFin },
+      { estatus: estatusFinal, prioridad: prioridadFinal, fechaFin: fechaFinFinal },
+    );
+    if (estatusFinal !== tarea.estatus) {
+      await this.actividad.registrar(id, user.sub, 'cambio_estatus', `Cambió el estatus de "${tarea.estatus}" a "${estatusFinal}".`);
+    }
+    if (dto.responsableId !== undefined && dto.responsableId !== tarea.responsableId) {
+      await this.actividad.registrar(id, user.sub, 'cambio_responsable', 'Reasignó el responsable de la tarea.');
+    }
+    if (prioridadFinal !== tarea.prioridad) {
+      await this.actividad.registrar(id, user.sub, 'cambio_prioridad', `Cambió la prioridad de "${tarea.prioridad}" a "${prioridadFinal}".`);
     }
 
     // Alerta "asignacion": responsable final (si cambió) + usuarios
     // asignados finales (si dto.usuarioIds vino, o los mismos de antes si
     // no), menos quien ya estaba en asignadosAntes.
-    const responsableFinal = dto.responsableId !== undefined ? dto.responsableId : tarea.responsableId;
     const usuariosFinales = dto.usuarioIds ?? (tarea.usuariosAsignados ?? []).map((u) => u.id);
     const asignadosDespues = [responsableFinal, ...usuariosFinales].filter(
       (v): v is number => Boolean(v),
@@ -367,12 +554,35 @@ export class TareasService {
       throw new ForbiddenException('Solo puedes actualizar el avance de tareas asignadas a ti.');
     }
     const estatusOriginal = tarea.estatus;
+    const prioridadOriginal = tarea.prioridad;
+    const fechaFinOriginal = tarea.fechaFin;
+    const fechaInicioOriginal = tarea.fechaInicio;
     if (dto.estatus !== undefined) tarea.estatus = dto.estatus;
     if (dto.porcentajeAvance !== undefined) tarea.porcentajeAvance = dto.porcentajeAvance;
     this.aplicarAutomatizaciones(tarea, dto);
+    // Métricas para reportes ejecutivos — mismo criterio que en actualizar().
+    if (tarea.estatus === 'completada' && estatusOriginal !== 'completada') {
+      tarea.completadaEn = new Date();
+    } else if (tarea.estatus !== 'completada' && estatusOriginal === 'completada') {
+      tarea.completadaEn = null;
+    }
     await this.tareas.save(tarea);
     if (tarea.estatus === 'bloqueada' && estatusOriginal !== 'bloqueada') {
       await this.notificarBloqueoSinRomper(id);
+    }
+    if (tarea.estatus === 'completada' && estatusOriginal !== 'completada') {
+      await this.generarSiguienteOcurrenciaSinRomper(tarea, fechaInicioOriginal, fechaFinOriginal);
+    }
+    await this.evaluarAutomatizacionesSinRomper(
+      tarea.proyectoId,
+      id,
+      tarea.nombre,
+      tarea.responsableId,
+      { estatus: estatusOriginal, prioridad: prioridadOriginal, fechaFin: fechaFinOriginal },
+      { estatus: tarea.estatus, prioridad: tarea.prioridad, fechaFin: tarea.fechaFin },
+    );
+    if (tarea.estatus !== estatusOriginal) {
+      await this.actividad.registrar(id, user.sub, 'cambio_estatus', `Cambió el estatus de "${estatusOriginal}" a "${tarea.estatus}".`);
     }
     this.emitirCambio(tarea.proyectoId, id, 'actualizada');
     return this.obtener(id, user);
@@ -433,7 +643,7 @@ export class TareasService {
       .createQueryBuilder('tarea')
       .leftJoinAndSelect('tarea.proyecto', 'proyecto')
       .leftJoinAndSelect('tarea.responsable', 'responsable')
-      .leftJoinAndSelect('tarea.dependencia', 'dependencia')
+      .leftJoinAndSelect('tarea.dependencias', 'dependencias')
       .leftJoinAndSelect('tarea.usuariosAsignados', 'usuariosAsignados')
       .where('tarea.responsable_id = :uid', { uid: user.sub })
       .orWhere((qb) => {
@@ -461,8 +671,10 @@ export class TareasService {
     const proyecto = await this.proyectos.obtenerEntidad(tarea.proyectoId);
     this.proyectos.verificarPuedeGestionar(proyecto, user);
 
-    // Ninguna otra tarea debe quedar apuntando a una dependencia eliminada.
-    await this.tareas.query(`UPDATE tareas SET dependencia_id = NULL WHERE dependencia_id = $1`, [id]);
+    // Ninguna otra tarea debe quedar esperando a una dependencia eliminada
+    // — ON DELETE CASCADE en tarea_dependencias ya limpia ambas direcciones
+    // (como predecesora de otras Y como dependiente), no hace falta un
+    // UPDATE manual como en la versión de dependencia simple original.
     await this.tareas.query(`DELETE FROM tarea_usuarios WHERE tarea_id = $1`, [id]);
     await this.tareas.remove(tarea);
     this.emitirCambio(tarea.proyectoId, id, 'eliminada');

@@ -3,8 +3,18 @@ import { Link, useNavigate } from 'react-router-dom';
 import { clearSession, getUsuario, msRestantesDeSesion } from '../lib/api';
 import { cerrarSocket } from '../lib/socket';
 import NotificacionesBell from './NotificacionesBell';
+import BusquedaGlobal from './BusquedaGlobal';
 
-type ItemActivo = 'inicio' | 'proyectos' | 'mis-tareas' | 'gantt' | 'usuarios' | 'metodologia';
+type ItemActivo =
+  | 'inicio'
+  | 'proyectos'
+  | 'mis-tareas'
+  | 'gantt'
+  | 'portafolio'
+  | 'usuarios'
+  | 'metodologia'
+  | 'carga-trabajo'
+  | 'reportes';
 
 // Shell compartido (header + nav lateral) — extraído del Dashboard original
 // para que Proyectos/Gantt (Fase 1) usen la misma cáscara visual sin
@@ -66,6 +76,11 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
           <img src="/logo-fpt.png" alt="Fitness Para Todos" className="w-9 h-9 rounded-lg shrink-0" />
           <span className="truncate hidden sm:inline">Gestión de Proyectos</span>
         </div>
+        {/* Búsqueda global (tercera ronda de mejoras) — oculta en pantallas muy
+            angostas para no saturar el header junto al menú/campanita. */}
+        <div className="hidden md:block flex-1 mx-4 max-w-xs">
+          <BusquedaGlobal />
+        </div>
         <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm shrink-0">
           <NotificacionesBell />
           <span className="hidden sm:inline">
@@ -105,6 +120,29 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
           <Link to="/gantt" className={itemClase('gantt')} onClick={cerrarMenu}>
             Diagrama de Gantt
           </Link>
+          {/* Portafolio (vista de conjunto por Dirección) — visible a
+              cualquiera que pueda ver al menos un proyecto, sin importar el
+              rol: el backend ya filtra /proyectos por alcance, así que no
+              hace falta repetir ningún gate de rol aquí. */}
+          <Link to="/portafolio" className={itemClase('portafolio')} onClick={cerrarMenu}>
+            Portafolio
+          </Link>
+          {/* Carga de trabajo por persona (tercera ronda de mejoras) — mismo
+              alcance de roles que ya protege el endpoint en el backend
+              (admin/director/gerente_area); un colaborador no lo ve. */}
+          {['admin', 'director', 'gerente_area'].includes(usuario?.rol) && (
+            <Link to="/carga-trabajo" className={itemClase('carga-trabajo')} onClick={cerrarMenu}>
+              Carga de trabajo
+            </Link>
+          )}
+          {/* Reportes / dashboard ejecutivo con tendencias (cuarta ronda de
+              mejoras) — vista de gestión, mismo gate de rol que Carga de
+              trabajo (un colaborador no lo ve). */}
+          {['admin', 'director', 'gerente_area'].includes(usuario?.rol) && (
+            <Link to="/reportes" className={itemClase('reportes')} onClick={cerrarMenu}>
+              Reportes
+            </Link>
+          )}
           <Link to="/metodologia" className={itemClase('metodologia')} onClick={cerrarMenu}>
             Metodología
           </Link>

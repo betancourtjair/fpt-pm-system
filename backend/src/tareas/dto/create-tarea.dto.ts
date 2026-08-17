@@ -42,12 +42,37 @@ export class CreateTareaDto {
   @IsInt({ each: true })
   usuarioIds?: number[];
 
+  // Dependencias múltiples (cuarta ronda de mejoras) — esta tarea espera a
+  // que TODAS las tareas de este arreglo terminen antes de poder iniciar.
   @IsOptional()
+  @IsArray()
   @Type(() => Number)
-  @IsInt()
-  dependenciaId?: number;
+  @IsInt({ each: true })
+  dependeDeIds?: number[];
 
   @IsOptional()
   @IsIn(['alta', 'media', 'baja'])
   prioridad?: string;
+
+  // Tareas recurrentes (cuarta ronda de mejoras) — si se manda un tipo, la
+  // tarea se regenera sola (con las fechas desplazadas) cada vez que se
+  // marca "completada".
+  @IsOptional()
+  @IsIn(['diaria', 'semanal', 'mensual'])
+  recurrenciaTipo?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  recurrenciaIntervalo?: number;
+
+  // Etiquetas libres (tercera ronda de mejoras) — texto libre, sin catálogo
+  // cerrado; el límite de 30 caracteres por etiqueta es solo para que no se
+  // usen como si fueran un segundo campo de descripción.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(30, { each: true })
+  etiquetas?: string[];
 }

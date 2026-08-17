@@ -3,17 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import PanelArchivos from '../components/PanelArchivos';
 import PanelComentarios from '../components/PanelComentarios';
+import PanelSubtareas from '../components/PanelSubtareas';
 import KanbanTareas from '../components/KanbanTareas';
 import CalendarioTareas from '../components/CalendarioTareas';
 import {
   descargarBlob,
   getUsuario,
+  automatizacionesApi,
   proyectosApi,
   tareasApi,
   usuariosApi,
   Gasto,
   Proyecto,
+  ReglaAutomatizacion,
   Tarea,
+  TipoAccionRegla,
 } from '../lib/api';
 
 const ESTATUS_TAREA = ['no_iniciada', 'en_progreso', 'completada', 'bloqueada'];
@@ -43,8 +47,15 @@ type FormTarea = {
   presupuesto: string;
   responsableId: string;
   usuarioIds: number[];
-  dependenciaId: string;
+  // Dependencias múltiples (cuarta ronda de mejoras) — reemplaza el
+  // dependenciaId singular original.
+  dependeDeIds: number[];
   prioridad: string;
+  etiquetas: string[];
+  // Tareas recurrentes (cuarta ronda de mejoras) — tipo vacío = sin
+  // recurrencia; el intervalo se guarda como texto porque es un <input>.
+  recurrenciaTipo: string;
+  recurrenciaIntervalo: string;
 };
 
 const FORM_VACIO: FormTarea = {
@@ -54,9 +65,43 @@ const FORM_VACIO: FormTarea = {
   presupuesto: '',
   responsableId: '',
   usuarioIds: [],
-  dependenciaId: '',
+  dependeDeIds: [],
   prioridad: 'media',
+  etiquetas: [],
+  recurrenciaTipo: '',
+  recurrenciaIntervalo: '1',
 };
+
+const RECURRENCIA_LABEL: Record<string, string> = { diaria: 'Diaria', semanal: 'Semanal', mensual: 'Mensual' };
+
+// Etiquetas libres (tercera ronda de mejoras) — mismo tope que el backend
+// (@MaxLength(30, {each:true})) para no dejar que el usuario escriba algo
+// que el servidor de todos modos va a rechazar.
+const ETIQUETA_LARGO_MAXIMO = 30;
+
+// Condiciones de las reglas de automatización — mismos valores que
+// ESTATUS_TAREA/PRIORIDAD_LABEL, reusados aquí para las opciones del select.
+const ACCION_LABEL: Record<TipoAccionRegla, string> = {
+  notificar_responsable: 'avisa al responsable',
+  notificar_director: 'avisa al director de área',
+  notificar_usuario: 'avisa a',
+};
+
+// Resumen legible en español de la condición de una regla, para que la
+// lista de "Automatizaciones" no obligue a leer los campos crudos.
+function resumenCondicion(r: ReglaAutomatizacion): string {
+  const partes: string[] = [];
+  if (r.condicionPrioridad) partes.push(`la prioridad es ${PRIORIDAD_LABEL[r.condicionPrioridad]}`);
+  if (r.condicionEstatus) partes.push(`el estatus es ${ESTATUS_LABEL[r.condicionEstatus] ?? r.condicionEstatus}`);
+  if (r.condicionVencida) partes.push('la tarea vence');
+  if (partes.length === 0) return 'Sin condición (aplica siempre)';
+  return `Si ${partes.join(' y ')}`;
+}
+
+function resumenAccion(r: ReglaAutomatizacion): string {
+  if (r.accionTipo === 'notificar_usuario') return `→ ${ACCION_LABEL.notificar_usuario} ${r.accionUsuario?.nombre ?? '—'}`;
+  return `→ ${ACCION_LABEL[r.accionTipo]}`;
+}
 
 // Detalle de un proyecto: tareas, dependencias, asignaciones y el flujo de
 // avance de autoservicio para colaboradores asignados (PID sección 9.2).
@@ -78,6 +123,7 @@ export default function ProyectoDetalle() {
   const [form, setForm] = useState<FormTarea>(FORM_VACIO);
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
+  const [etiquetaInput, setEtiquetaInput] = useState('');
 
   const [avanceEditando, setAvanceEditando] = useState<number | null>(null);
   const [avanceEstatus, setAvanceEstatus] = useState('');
@@ -111,6 +157,29 @@ export default function ProyectoDetalle() {
   // Comentarios por tarea (mejora sugerida) — mismo patrón de panel
   // expandible que los archivos, una tarea a la vez.
   const [tareaComentariosAbierta, setTareaComentariosAbierta] = useState<number | null>(null);
+
+  // Subtareas / checklist por tarea (tercera ronda de mejoras) — mismo
+  // patrón de panel expandible que archivos/comentarios, una tarea a la vez.
+  const [tareaSubtareasAbierta, setTareaSubtareasAbierta] = useState<number | null>(null);
+
+  // Automatizaciones configurables por proyecto (tercera ronda de mejoras)
+  // — panel colapsado por default para no saturar la pantalla, solo visible
+  // para quien puede administrar el proyecto.
+  const [mostrarAutomatizaciones, setMostrarAutomatizaciones] = useState(false);
+  const [reglas, setReglas] = useState<ReglaAutomatizacion[]>([]);
+  const [cargandoReglas, setCargandoReglas] = useState(false);
+  const [nombreRegla, setNombreRegla] = useState('');
+  const [condPrioridadRegla, setCondPrioridadRegla] = useState('');
+  const [condEstatusRegla, setCondEstatusRegla] = useState('');
+  const [condVencidaRegla, setCondVencidaRegla] = useState(false);
+  const [accionTipoRegla, setAccionTipoRegla] = useState<TipoAccionRegla>('notificar_responsable');
+  const [accionUsuarioIdRegla, setAccionUsuarioIdRegla] = useState('');
+  const [guardandoRegla, setGuardandoRegla] = useState(false);
+  const [errorRegla, setErrorRegla] = useState<string | null>(null);
+
+  // Etiquetas libres en tareas (tercera ronda de mejoras) — filtro
+  // client-side sobre las tareas ya cargadas, sin llamadas nuevas al API.
+  const [filtroEtiqueta, setFiltroEtiqueta] = useState<string | null>(null);
 
   // Tablero Kanban (mejora sugerida) — vista alterna a la tabla, ambas leen
   // del mismo estado `tareas`.
@@ -201,6 +270,83 @@ export default function ProyectoDetalle() {
     proyectosApi.obtener(proyectoId).then(setProyecto).catch(() => {});
   }
 
+  function cargarReglas() {
+    setCargandoReglas(true);
+    automatizacionesApi
+      .deProyecto(proyectoId)
+      .then(setReglas)
+      .catch(() => setErrorRegla('No se pudieron cargar las automatizaciones.'))
+      .finally(() => setCargandoReglas(false));
+  }
+
+  async function crearRegla(e: FormEvent) {
+    e.preventDefault();
+    setErrorRegla(null);
+    setGuardandoRegla(true);
+    const dto: Record<string, unknown> = {
+      nombre: nombreRegla,
+      condicionPrioridad: condPrioridadRegla || null,
+      condicionEstatus: condEstatusRegla || null,
+      condicionVencida: condVencidaRegla,
+      accionTipo: accionTipoRegla,
+    };
+    if (accionTipoRegla === 'notificar_usuario') dto.accionUsuarioId = Number(accionUsuarioIdRegla);
+    try {
+      const actualizadas = await automatizacionesApi.crear(proyectoId, dto);
+      setReglas(actualizadas);
+      setNombreRegla('');
+      setCondPrioridadRegla('');
+      setCondEstatusRegla('');
+      setCondVencidaRegla(false);
+      setAccionTipoRegla('notificar_responsable');
+      setAccionUsuarioIdRegla('');
+    } catch (err: any) {
+      setErrorRegla(err?.response?.data?.message || 'No se pudo crear la automatización.');
+    } finally {
+      setGuardandoRegla(false);
+    }
+  }
+
+  async function alternarRegla(r: ReglaAutomatizacion) {
+    setErrorRegla(null);
+    try {
+      const actualizadas = await automatizacionesApi.actualizar(r.id, { activa: !r.activa });
+      setReglas(actualizadas);
+    } catch (err: any) {
+      setErrorRegla(err?.response?.data?.message || 'No se pudo actualizar la automatización.');
+    }
+  }
+
+  async function eliminarRegla(r: ReglaAutomatizacion) {
+    if (!confirm(`¿Eliminar la automatización "${r.nombre}"?`)) return;
+    try {
+      await automatizacionesApi.eliminar(r.id);
+      setReglas((prev) => prev.filter((x) => x.id !== r.id));
+    } catch (err: any) {
+      setErrorRegla(err?.response?.data?.message || 'No se pudo eliminar la automatización.');
+    }
+  }
+
+  // Chips de etiqueta al escribir y presionar Enter/coma — sin librería,
+  // solo recortar/normalizar/deduplicar antes de meterlo al arreglo del form.
+  function agregarEtiqueta() {
+    const limpia = etiquetaInput.trim().slice(0, ETIQUETA_LARGO_MAXIMO);
+    if (!limpia) return;
+    setForm((f) => (f.etiquetas.includes(limpia) ? f : { ...f, etiquetas: [...f.etiquetas, limpia] }));
+    setEtiquetaInput('');
+  }
+
+  function alTecleoEtiqueta(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      agregarEtiqueta();
+    }
+  }
+
+  function quitarEtiqueta(etiqueta: string) {
+    setForm((f) => ({ ...f, etiquetas: f.etiquetas.filter((et) => et !== etiqueta) }));
+  }
+
   useEffect(() => {
     cargarTodo();
     // Un usuario con rol admin (como cualquier otro) sí puede quedar como
@@ -208,7 +354,10 @@ export default function ProyectoDetalle() {
     // de ser una persona del equipo solo por tener ese rol. Este selector
     // solo muestra el nombre (nunca el rol), así que no hace falta filtrar
     // nada aquí para que el rol admin quede "invisible" en este flujo.
-    if (puedeGestionar) usuariosApi.listar().then(setUsuarios).catch(() => {});
+    if (puedeGestionar) {
+      usuariosApi.listar().then(setUsuarios).catch(() => {});
+      cargarReglas();
+    }
     // Refresco automático cada 2 minutos — mismo intervalo usado en el
     // Gantt (PID sección 7.3), para que el avance de tareas se vea al día
     // sin que el usuario tenga que recargar la página manualmente.
@@ -224,6 +373,7 @@ export default function ProyectoDetalle() {
     setForm(FORM_VACIO);
     setModo('nueva');
     setErrorForm(null);
+    setEtiquetaInput('');
   }
 
   function abrirEdicion(t: Tarea) {
@@ -234,17 +384,30 @@ export default function ProyectoDetalle() {
       presupuesto: t.presupuesto !== undefined ? String(t.presupuesto) : '',
       responsableId: t.responsable ? String(t.responsable.id) : '',
       usuarioIds: t.usuariosAsignados.map((u) => u.id),
-      dependenciaId: t.dependenciaId ? String(t.dependenciaId) : '',
+      dependeDeIds: (t.dependencias ?? []).map((d) => d.id),
       prioridad: t.prioridad ?? 'media',
+      etiquetas: t.etiquetas ?? [],
+      recurrenciaTipo: t.recurrenciaTipo ?? '',
+      recurrenciaIntervalo: String(t.recurrenciaIntervalo ?? 1),
     });
     setModo(t.id);
     setErrorForm(null);
+    setEtiquetaInput('');
   }
 
   function toggleUsuario(uid: number) {
     setForm((f) => ({
       ...f,
       usuarioIds: f.usuarioIds.includes(uid) ? f.usuarioIds.filter((x) => x !== uid) : [...f.usuarioIds, uid],
+    }));
+  }
+
+  function toggleDependencia(tareaId: number) {
+    setForm((f) => ({
+      ...f,
+      dependeDeIds: f.dependeDeIds.includes(tareaId)
+        ? f.dependeDeIds.filter((x) => x !== tareaId)
+        : [...f.dependeDeIds, tareaId],
     }));
   }
 
@@ -259,9 +422,14 @@ export default function ProyectoDetalle() {
       responsableId: Number(form.responsableId),
       usuarioIds: form.usuarioIds,
       prioridad: form.prioridad,
+      etiquetas: form.etiquetas,
+      // Siempre se manda (aunque sea []), para poder QUITAR dependencias
+      // que ya no aplican al editar, no solo agregar nuevas.
+      dependeDeIds: form.dependeDeIds,
+      recurrenciaTipo: form.recurrenciaTipo || null,
     };
     if (form.presupuesto !== '') dto.presupuesto = Number(form.presupuesto);
-    if (form.dependenciaId !== '') dto.dependenciaId = Number(form.dependenciaId);
+    if (form.recurrenciaTipo) dto.recurrenciaIntervalo = Number(form.recurrenciaIntervalo || 1);
     try {
       if (modo === 'nueva') {
         await tareasApi.crear(proyectoId, dto);
@@ -331,6 +499,18 @@ export default function ProyectoDetalle() {
     [tareas, modo],
   );
 
+  // Etiquetas libres (tercera ronda de mejoras) — set de etiquetas distintas
+  // entre las tareas ya cargadas, para pintar los chips de filtro; y la
+  // lista de tareas ya filtrada (client-side, sin llamada nueva al API).
+  const etiquetasDisponibles = useMemo(
+    () => Array.from(new Set(tareas.flatMap((t) => t.etiquetas ?? []))).sort(),
+    [tareas],
+  );
+  const tareasFiltradas = useMemo(
+    () => (filtroEtiqueta ? tareas.filter((t) => (t.etiquetas ?? []).includes(filtroEtiqueta)) : tareas),
+    [tareas, filtroEtiqueta],
+  );
+
   // La columna de checkboxes solo existe cuando puedeGestionar — el colSpan
   // de las filas "de ancho completo" (panel de archivos, tabla vacía) debe
   // seguirla para no dejar una columna huérfana sin cubrir.
@@ -343,7 +523,12 @@ export default function ProyectoDetalle() {
   }
 
   function toggleSeleccionarTodas() {
-    setSeleccionadas((prev) => (prev.length === tareas.length ? [] : tareas.map((t) => t.id)));
+    // Selecciona/deselecciona sobre las tareas visibles (respeta el filtro
+    // de etiqueta activo, si hay uno) — no tiene sentido seleccionar algo
+    // que ni siquiera se está mostrando.
+    setSeleccionadas((prev) =>
+      prev.length === tareasFiltradas.length ? [] : tareasFiltradas.map((t) => t.id),
+    );
   }
 
   async function reasignarSeleccionadas() {
@@ -613,6 +798,154 @@ export default function ProyectoDetalle() {
         <PanelArchivos dueño={{ proyectoId }} puedeGestionar={puedeGestionar} />
       </div>
 
+      {puedeGestionar && (
+        <div className="bg-white rounded-2xl shadow-card p-5 mb-6">
+          <button
+            onClick={() => setMostrarAutomatizaciones((v) => !v)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <h2 className="font-display font-bold text-base text-primary-900">Automatizaciones</h2>
+            <span className="text-primary-600 text-sm font-bold">{mostrarAutomatizaciones ? '▴' : '▾'}</span>
+          </button>
+          {mostrarAutomatizaciones && (
+            <div className="mt-3">
+              <p className="text-xs text-gray-500 mb-3">
+                Reglas "si la tarea entra en tal condición, avisa a tal persona" — se evalúan solas cada
+                vez que una tarea de este proyecto cambia.
+              </p>
+              {cargandoReglas ? (
+                <p className="text-xs text-gray-400">Cargando automatizaciones…</p>
+              ) : reglas.length === 0 ? (
+                <p className="text-xs text-gray-400 mb-3">Todavía no hay automatizaciones configuradas.</p>
+              ) : (
+                <ul className="mb-3 divide-y divide-gray-50">
+                  {reglas.map((r) => (
+                    <li key={r.id} className="py-2 flex items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <span className="font-semibold text-gray-700">{r.nombre}</span>{' '}
+                        <span className="text-gray-500">
+                          {resumenCondicion(r)} {resumenAccion(r)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <button
+                          onClick={() => alternarRegla(r)}
+                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            r.activa ? 'bg-accent-500/15 text-accent-700' : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          {r.activa ? 'Activa' : 'Inactiva'}
+                        </button>
+                        <button
+                          onClick={() => eliminarRegla(r)}
+                          className="text-danger-500 font-bold hover:underline"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <form onSubmit={crearRegla} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end border-t border-gray-100 pt-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Nombre</label>
+                  <input
+                    required
+                    minLength={3}
+                    value={nombreRegla}
+                    onChange={(e) => setNombreRegla(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Prioridad</label>
+                  <select
+                    value={condPrioridadRegla}
+                    onChange={(e) => setCondPrioridadRegla(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Sin condición</option>
+                    {Object.entries(PRIORIDAD_LABEL).map(([valor, etiqueta]) => (
+                      <option key={valor} value={valor}>
+                        {etiqueta}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Estatus</label>
+                  <select
+                    value={condEstatusRegla}
+                    onChange={(e) => setCondEstatusRegla(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Sin condición</option>
+                    {ESTATUS_TAREA.map((s) => (
+                      <option key={s} value={s}>
+                        {ESTATUS_LABEL[s]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 pb-2">
+                  <input
+                    type="checkbox"
+                    id="cond-vencida-regla"
+                    checked={condVencidaRegla}
+                    onChange={(e) => setCondVencidaRegla(e.target.checked)}
+                  />
+                  <label htmlFor="cond-vencida-regla" className="text-xs font-semibold text-gray-700">
+                    Tarea vencida
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Acción</label>
+                  <select
+                    value={accionTipoRegla}
+                    onChange={(e) => setAccionTipoRegla(e.target.value as TipoAccionRegla)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="notificar_responsable">Avisar al responsable</option>
+                    <option value="notificar_director">Avisar al director de área</option>
+                    <option value="notificar_usuario">Avisar a un usuario específico</option>
+                  </select>
+                </div>
+                {accionTipoRegla === 'notificar_usuario' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Usuario</label>
+                    <select
+                      required
+                      value={accionUsuarioIdRegla}
+                      onChange={(e) => setAccionUsuarioIdRegla(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="">Selecciona…</option>
+                      {usuarios.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="col-span-2 sm:col-span-4">
+                  {errorRegla && <p className="text-danger-500 text-xs font-medium mb-2">{errorRegla}</p>}
+                  <button
+                    type="submit"
+                    disabled={guardandoRegla}
+                    className="bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-60"
+                  >
+                    {guardandoRegla ? 'Guardando…' : '+ Nueva automatización'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
       {(modo === 'nueva' || typeof modo === 'number') && (
         <form onSubmit={guardar} className="bg-white rounded-2xl shadow-card p-6 mb-6 space-y-4">
           <h2 className="font-display font-bold text-base">
@@ -691,21 +1024,61 @@ export default function ProyectoDetalle() {
               </select>
             </div>
             <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Tarea recurrente (opcional)</label>
+              <div className="flex gap-2">
+                <select
+                  value={form.recurrenciaTipo}
+                  onChange={(e) => setForm({ ...form, recurrenciaTipo: e.target.value })}
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2"
+                >
+                  <option value="">No se repite</option>
+                  {Object.entries(RECURRENCIA_LABEL).map(([valor, etiqueta]) => (
+                    <option key={valor} value={valor}>
+                      {etiqueta}
+                    </option>
+                  ))}
+                </select>
+                {form.recurrenciaTipo && (
+                  <input
+                    type="number"
+                    min={1}
+                    title="Cada cuántas veces se repite (ej. 2 = cada 2 semanas)"
+                    value={form.recurrenciaIntervalo}
+                    onChange={(e) => setForm({ ...form, recurrenciaIntervalo: e.target.value })}
+                    className="w-16 border border-gray-200 rounded-lg px-2 py-2 text-center"
+                  />
+                )}
+              </div>
+              {form.recurrenciaTipo && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Al completarse, se crea sola la siguiente cada {form.recurrenciaIntervalo || 1}{' '}
+                  {form.recurrenciaTipo === 'diaria' ? 'día(s)' : form.recurrenciaTipo === 'semanal' ? 'semana(s)' : 'mes(es)'}.
+                </p>
+              )}
+            </div>
+            <div className="col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Depende de (opcional)
+                Depende de (opcional) — no puede iniciar hasta que TODAS las que elijas terminen
               </label>
-              <select
-                value={form.dependenciaId}
-                onChange={(e) => setForm({ ...form, dependenciaId: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2"
-              >
-                <option value="">Sin dependencia</option>
+              <div className="flex flex-wrap gap-2">
+                {tareasParaDependencia.length === 0 && (
+                  <p className="text-sm text-gray-400">No hay otras tareas en este proyecto todavía.</p>
+                )}
                 {tareasParaDependencia.map((t) => (
-                  <option key={t.id} value={t.id}>
+                  <button
+                    type="button"
+                    key={t.id}
+                    onClick={() => toggleDependencia(t.id)}
+                    className={`text-sm px-3 py-1.5 rounded-full border ${
+                      form.dependeDeIds.includes(t.id)
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'border-gray-300 text-gray-600'
+                    }`}
+                  >
                     {t.nombre}
-                  </option>
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-1">Usuarios asignados</label>
@@ -725,6 +1098,36 @@ export default function ProyectoDetalle() {
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Etiquetas (opcional)</label>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {form.etiquetas.map((et) => (
+                  <span
+                    key={et}
+                    className="text-xs font-semibold bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full flex items-center gap-1"
+                  >
+                    {et}
+                    <button
+                      type="button"
+                      onClick={() => quitarEtiqueta(et)}
+                      className="text-primary-400 hover:text-primary-700 font-bold"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={etiquetaInput}
+                onChange={(e) => setEtiquetaInput(e.target.value)}
+                onKeyDown={alTecleoEtiqueta}
+                onBlur={agregarEtiqueta}
+                maxLength={ETIQUETA_LARGO_MAXIMO}
+                placeholder="Escribe y presiona Enter o coma…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2"
+              />
             </div>
           </div>
           {errorForm && <p className="text-danger-500 text-sm font-medium">{errorForm}</p>}
@@ -822,6 +1225,33 @@ export default function ProyectoDetalle() {
           <CalendarioTareas tareas={tareas} />
         </div>
       ) : (
+      <>
+      {etiquetasDisponibles.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <span className="text-xs font-semibold text-gray-500">Filtrar por etiqueta:</span>
+          {etiquetasDisponibles.map((et) => (
+            <button
+              key={et}
+              onClick={() => setFiltroEtiqueta((v) => (v === et ? null : et))}
+              className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                filtroEtiqueta === et
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-primary-50 text-primary-600 hover:bg-primary-100'
+              }`}
+            >
+              {et}
+            </button>
+          ))}
+          {filtroEtiqueta && (
+            <button
+              onClick={() => setFiltroEtiqueta(null)}
+              className="text-xs text-gray-400 hover:underline"
+            >
+              Quitar filtro
+            </button>
+          )}
+        </div>
+      )}
       <div className="bg-white rounded-2xl shadow-card overflow-x-auto">
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-primary-50 text-primary-800 text-left">
@@ -830,7 +1260,7 @@ export default function ProyectoDetalle() {
                 <th className="px-5 py-3 font-bold w-8">
                   <input
                     type="checkbox"
-                    checked={tareas.length > 0 && seleccionadas.length === tareas.length}
+                    checked={tareasFiltradas.length > 0 && seleccionadas.length === tareasFiltradas.length}
                     onChange={toggleSeleccionarTodas}
                   />
                 </th>
@@ -845,7 +1275,7 @@ export default function ProyectoDetalle() {
             </tr>
           </thead>
           <tbody>
-            {tareas.map((t) => (
+            {tareasFiltradas.map((t) => (
               <Fragment key={t.id}>
                 <tr className="border-t border-gray-100 align-top">
                   {puedeGestionar && (
@@ -867,6 +1297,22 @@ export default function ProyectoDetalle() {
                       >
                         {PRIORIDAD_LABEL[t.prioridad] ?? 'Media'}
                       </span>
+                      {(t.etiquetas ?? []).map((et) => (
+                        <span
+                          key={et}
+                          className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 bg-primary-50 text-primary-600"
+                        >
+                          {et}
+                        </span>
+                      ))}
+                      {t.recurrenciaTipo && (
+                        <span
+                          className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 bg-gray-100 text-gray-500"
+                          title={`Se repite ${RECURRENCIA_LABEL[t.recurrenciaTipo].toLowerCase()}, cada ${t.recurrenciaIntervalo}`}
+                        >
+                          ↻ Recurrente
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-5 py-3 text-gray-500">
@@ -876,7 +1322,9 @@ export default function ProyectoDetalle() {
                   <td className="px-5 py-3 text-gray-600">
                     {t.usuariosAsignados.map((u) => u.nombre).join(', ') || '—'}
                   </td>
-                  <td className="px-5 py-3 text-gray-500">{t.dependencia?.nombre ?? '—'}</td>
+                  <td className="px-5 py-3 text-gray-500">
+                    {(t.dependencias ?? []).map((d) => d.nombre).join(', ') || '—'}
+                  </td>
                   <td className="px-5 py-3">
                     {avanceEditando === t.id ? (
                       <div className="flex items-center gap-2">
@@ -946,7 +1394,13 @@ export default function ProyectoDetalle() {
                         onClick={() => setTareaComentariosAbierta((v) => (v === t.id ? null : t.id))}
                         className="text-gray-600 text-xs font-bold hover:underline"
                       >
-                        {tareaComentariosAbierta === t.id ? 'Ocultar comentarios' : 'Comentarios'}
+                        {tareaComentariosAbierta === t.id ? 'Ocultar actividad' : 'Actividad'}
+                      </button>
+                      <button
+                        onClick={() => setTareaSubtareasAbierta((v) => (v === t.id ? null : t.id))}
+                        className="text-gray-600 text-xs font-bold hover:underline"
+                      >
+                        {tareaSubtareasAbierta === t.id ? 'Ocultar subtareas' : 'Subtareas'}
                       </button>
                       {puedeGestionar && (
                         <>
@@ -981,24 +1435,41 @@ export default function ProyectoDetalle() {
                   <tr className="border-t border-gray-100 bg-gray-50">
                     <td colSpan={numColumnas} className="px-5 py-3">
                       <p className="text-xs font-bold text-gray-500 uppercase mb-2">
-                        Comentarios de "{t.nombre}"
+                        Actividad de "{t.nombre}"
                       </p>
-                      <PanelComentarios tareaId={t.id} puedeGestionar={puedeGestionar} />
+                      <PanelComentarios tareaId={t.id} proyectoId={proyectoId} puedeGestionar={puedeGestionar} />
+                    </td>
+                  </tr>
+                )}
+                {tareaSubtareasAbierta === t.id && (
+                  <tr className="border-t border-gray-100 bg-gray-50">
+                    <td colSpan={numColumnas} className="px-5 py-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-2">
+                        Subtareas de "{t.nombre}"
+                      </p>
+                      <PanelSubtareas
+                        tareaId={t.id}
+                        puedeGestionar={puedeGestionar}
+                        puedeMarcar={puedeGestionar || esAsignado(t)}
+                      />
                     </td>
                   </tr>
                 )}
               </Fragment>
             ))}
-            {tareas.length === 0 && (
+            {tareasFiltradas.length === 0 && (
               <tr>
                 <td colSpan={numColumnas} className="px-5 py-8 text-center text-gray-400">
-                  Este proyecto todavía no tiene tareas.
+                  {tareas.length === 0
+                    ? 'Este proyecto todavía no tiene tareas.'
+                    : 'Ninguna tarea tiene la etiqueta seleccionada.'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+      </>
       )}
     </Layout>
   );

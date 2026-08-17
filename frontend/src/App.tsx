@@ -6,8 +6,11 @@ import Proyectos from './pages/Proyectos';
 import ProyectoDetalle from './pages/ProyectoDetalle';
 import MisTareas from './pages/MisTareas';
 import Gantt from './pages/Gantt';
+import Portafolio from './pages/Portafolio';
 import Usuarios from './pages/Usuarios';
 import Metodologia from './pages/Metodologia';
+import CargaTrabajo from './pages/CargaTrabajo';
+import Reportes from './pages/Reportes';
 import OlvidePassword from './pages/OlvidePassword';
 import RestablecerPassword from './pages/RestablecerPassword';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -68,10 +71,34 @@ export default function App() {
           }
         />
         <Route
+          path="/portafolio"
+          element={
+            <ProtectedRoute>
+              <Portafolio />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/usuarios"
           element={
             <ProtectedRoute>
               <Usuarios />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/carga-trabajo"
+          element={
+            <ProtectedRoute>
+              <CargaTrabajo />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reportes"
+          element={
+            <ProtectedRoute>
+              <Reportes />
             </ProtectedRoute>
           }
         />

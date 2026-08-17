@@ -7,8 +7,10 @@ import {
   getUsuario,
   proyectosApi,
   usuariosApi,
+  vistasGuardadasApi,
   Direccion,
   Proyecto,
+  VistaGuardada,
 } from '../lib/api';
 
 const ESTATUS_LABEL: Record<string, string> = {
@@ -62,6 +64,55 @@ export default function Proyectos() {
   const [filtroDireccionId, setFiltroDireccionId] = useState('');
   const [filtroEstatus, setFiltroEstatus] = useState('');
 
+  // Vistas guardadas (mejora funcional): la combinación de los 3 filtros de
+  // arriba se puede nombrar y recuperar después — se guarda tal cual como
+  // `filtros` para que aplicarla sea simplemente leer las 3 llaves de vuelta.
+  const [vistasGuardadas, setVistasGuardadas] = useState<VistaGuardada[]>([]);
+  const [vistaSeleccionadaId, setVistaSeleccionadaId] = useState('');
+
+  function cargarVistas() {
+    vistasGuardadasApi
+      .listar('proyectos')
+      .then(setVistasGuardadas)
+      .catch(() => {});
+  }
+
+  function aplicarVista(id: string) {
+    setVistaSeleccionadaId(id);
+    const vista = vistasGuardadas.find((v) => String(v.id) === id);
+    if (!vista) return;
+    const f = vista.filtros as Record<string, unknown>;
+    setBusqueda(typeof f.busqueda === 'string' ? f.busqueda : '');
+    setFiltroDireccionId(typeof f.filtroDireccionId === 'string' ? f.filtroDireccionId : '');
+    setFiltroEstatus(typeof f.filtroEstatus === 'string' ? f.filtroEstatus : '');
+  }
+
+  async function guardarVistaActual() {
+    const nombre = prompt('Nombre de la vista:');
+    if (!nombre) return;
+    try {
+      await vistasGuardadasApi.crear({
+        pantalla: 'proyectos',
+        nombre,
+        filtros: { busqueda, filtroDireccionId, filtroEstatus },
+      });
+      cargarVistas();
+    } catch {
+      setError('No se pudo guardar la vista.');
+    }
+  }
+
+  async function eliminarVistaSeleccionada() {
+    if (!vistaSeleccionadaId) return;
+    try {
+      await vistasGuardadasApi.eliminar(Number(vistaSeleccionadaId));
+      setVistaSeleccionadaId('');
+      cargarVistas();
+    } catch {
+      setError('No se pudo eliminar la vista.');
+    }
+  }
+
   function cargar() {
     setLoading(true);
     proyectosApi
@@ -73,6 +124,7 @@ export default function Proyectos() {
 
   useEffect(() => {
     cargar();
+    cargarVistas();
     // Direcciones se usan tanto para el formulario de creación (admin/
     // director/gerente_area) como para el filtro de la lista (cualquiera
     // con acceso a Proyectos) — por eso ya no depende de puedeCrear.
@@ -326,6 +378,39 @@ export default function Proyectos() {
               Limpiar filtros
             </button>
           )}
+          <div className="flex items-center gap-1 ml-auto">
+            <select
+              value={vistaSeleccionadaId}
+              onChange={(e) => aplicarVista(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">Vistas guardadas…</option>
+              {vistasGuardadas.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.nombre}
+                </option>
+              ))}
+            </select>
+            {vistaSeleccionadaId && (
+              <button
+                type="button"
+                onClick={eliminarVistaSeleccionada}
+                title="Eliminar vista guardada"
+                className="text-sm font-semibold text-danger-500 hover:text-danger-600 px-1"
+              >
+                ×
+              </button>
+            )}
+            {hayFiltrosActivos && (
+              <button
+                type="button"
+                onClick={guardarVistaActual}
+                className="bg-white border border-primary-200 hover:bg-primary-50 text-primary-800 font-semibold rounded-lg px-3 py-2 text-sm"
+              >
+                Guardar vista actual
+              </button>
+            )}
+          </div>
         </div>
       )}
 

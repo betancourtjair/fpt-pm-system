@@ -16,6 +16,13 @@ import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { ArchivosModule } from './archivos/archivos.module';
 import { ComentariosModule } from './comentarios/comentarios.module';
+import { AutomatizacionesModule } from './automatizaciones/automatizaciones.module';
+import { SubtareasModule } from './subtareas/subtareas.module';
+import { ActividadModule } from './actividad/actividad.module';
+import { BusquedaModule } from './busqueda/busqueda.module';
+import { VistasGuardadasModule } from './vistas-guardadas/vistas-guardadas.module';
+import { PlantillasChecklistModule } from './plantillas-checklist/plantillas-checklist.module';
+import { ReportesModule } from './reportes/reportes.module';
 
 @Module({
   imports: [
@@ -47,6 +54,13 @@ import { ComentariosModule } from './comentarios/comentarios.module';
     RealtimeModule,
     ArchivosModule,
     ComentariosModule,
+    AutomatizacionesModule,
+    SubtareasModule,
+    ActividadModule,
+    BusquedaModule,
+    VistasGuardadasModule,
+    PlantillasChecklistModule,
+    ReportesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

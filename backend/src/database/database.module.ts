@@ -10,6 +10,13 @@ import { AlertaEnviada } from '../entities/alerta-enviada.entity';
 import { GastoProyecto } from '../entities/gasto-proyecto.entity';
 import { Adjunto } from '../entities/adjunto.entity';
 import { ComentarioTarea } from '../entities/comentario-tarea.entity';
+import { ReglaAutomatizacion } from '../entities/regla-automatizacion.entity';
+import { NotificacionPersonalizada } from '../entities/notificacion-personalizada.entity';
+import { SubtareaChecklist } from '../entities/subtarea-checklist.entity';
+import { ActividadTarea } from '../entities/actividad-tarea.entity';
+import { VistaGuardada } from '../entities/vista-guardada.entity';
+import { PlantillaChecklist } from '../entities/plantilla-checklist.entity';
+import { PlantillaChecklistItem } from '../entities/plantilla-checklist-item.entity';
 
 // Las tablas las crea db/schema.sql (DDL ya probado contra PostgreSQL — ver
 // PID sección 5.2), por eso synchronize siempre va en false: TypeORM solo
@@ -25,6 +32,13 @@ const ENTIDADES = [
   GastoProyecto,
   Adjunto,
   ComentarioTarea,
+  ReglaAutomatizacion,
+  NotificacionPersonalizada,
+  SubtareaChecklist,
+  ActividadTarea,
+  VistaGuardada,
+  PlantillaChecklist,
+  PlantillaChecklistItem,
 ];
 
 @Module({

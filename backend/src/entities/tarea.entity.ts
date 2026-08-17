@@ -46,6 +46,12 @@ export class Tarea {
   @Column({ type: 'varchar', length: 10, default: 'media' })
   prioridad: string;
 
+  // Etiquetas libres (tercera ronda de mejoras, ver README sección 4):
+  // texto libre además de prioridad, para que cada Dirección organice por
+  // lo que necesite ("cliente X", "urgente-legal") sin tocar el esquema.
+  @Column({ type: 'text', array: true, default: () => "'{}'" })
+  etiquetas: string[];
+
   @Column({ name: 'responsable_id', type: 'int', nullable: true })
   responsableId: number | null;
 
@@ -53,14 +59,39 @@ export class Tarea {
   @JoinColumn({ name: 'responsable_id' })
   responsable: Usuario | null;
 
-  // Dependencia simple (Fase 1): esta tarea no puede iniciar hasta que
-  // termine su predecesora. El Gantt la dibuja como una flecha entre barras.
-  @Column({ name: 'dependencia_id', type: 'int', nullable: true })
-  dependenciaId: number | null;
+  // Dependencias múltiples (cuarta ronda de mejoras, ver README sección 4):
+  // reemplaza la dependencia simple original (columna `dependencia_id`, que
+  // se deja en la base sin usar) — esta tarea no puede iniciar hasta que
+  // TODAS las de este arreglo hayan terminado. El Gantt dibuja una flecha
+  // por cada una.
+  @ManyToMany(() => Tarea)
+  @JoinTable({
+    name: 'tarea_dependencias',
+    joinColumn: { name: 'tarea_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'depende_de_id', referencedColumnName: 'id' },
+  })
+  dependencias: Tarea[];
 
-  @ManyToOne(() => Tarea)
-  @JoinColumn({ name: 'dependencia_id' })
-  dependencia: Tarea | null;
+  // Tareas recurrentes (cuarta ronda de mejoras): si `recurrenciaTipo` no es
+  // NULL, al completarse esta tarea se crea sola la siguiente ocurrencia con
+  // las fechas desplazadas — ver TareasService.generarSiguienteOcurrencia.
+  @Column({ name: 'recurrencia_tipo', type: 'varchar', length: 10, nullable: true })
+  recurrenciaTipo: string | null;
+
+  @Column({ name: 'recurrencia_intervalo', type: 'smallint', default: 1 })
+  recurrenciaIntervalo: number;
+
+  @Column({ name: 'recurrencia_activa', type: 'boolean', default: true })
+  recurrenciaActiva: boolean;
+
+  // Métricas para reportes ejecutivos (cuarta ronda de mejoras): sin estas
+  // dos columnas no hay forma de calcular tendencias mes a mes ni el tiempo
+  // promedio real para completar una tarea (ver ReportesService).
+  @Column({ name: 'creado_en', type: 'timestamptz', default: () => 'now()' })
+  creadoEn: Date;
+
+  @Column({ name: 'completada_en', type: 'timestamptz', nullable: true })
+  completadaEn: Date | null;
 
   @ManyToMany(() => Usuario)
   @JoinTable({

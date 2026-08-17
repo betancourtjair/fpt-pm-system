@@ -84,6 +84,14 @@ export class ProyectosController {
   // Presupuesto real vs. plan (prioridad 8) — anidado bajo el proyecto para
   // reutilizar exactamente las mismas reglas de alcance/permiso que ya
   // tiene ProyectosService, sin duplicar lógica en un módulo aparte.
+  // Equipo del proyecto (tercera ronda de mejoras) — selector de menciones
+  // (@usuario) en comentarios; cualquiera con acceso de lectura al proyecto
+  // puede consultarlo (ProyectosService.equipo ya valida ese alcance).
+  @Get(':id/equipo')
+  equipo(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.proyectos.equipo(id, user);
+  }
+
   @Get(':id/gastos')
   listarGastos(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.proyectos.listarGastos(id, user);

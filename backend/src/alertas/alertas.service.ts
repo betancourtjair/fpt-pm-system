@@ -259,7 +259,11 @@ export class AlertasService {
     this.eventos.emit('notificacion.creada', {
       usuarioId: args.usuarioId,
       notificacion: {
-        id: insertado.raw[0].id as number,
+        // Prefijo 'a-' para no chocar con los ids de tipo 'p-<n>' de
+        // notificaciones_personalizadas (menciones/automatizaciones) — el
+        // mismo esquema que expone GET /notificaciones (ver
+        // NotificacionesController).
+        id: `a-${insertado.raw[0].id}`,
         tipo: args.tipo,
         tareaId: args.tareaId,
         tareaNombre: args.datosTarea.nombre,

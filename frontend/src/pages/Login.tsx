@@ -73,6 +73,19 @@ export default function Login() {
             </Link>
           </div>
         </form>
+
+        {/* Si no tienes cuenta todavía, no hay autoservicio para crearla
+            (las altas las hace TI vía Admin o carga masiva por Excel) — de
+            ahí que el único camino de ayuda aquí sea contactar a TI. */}
+        <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+          <p className="text-xs text-gray-500 mb-2">Si no tienes usuario, contacta a TI</p>
+          <a
+            href="mailto:soporte@fpt.com.mx"
+            className="inline-block text-sm font-bold text-primary-600 hover:text-primary-800 border border-primary-200 rounded-lg px-4 py-1.5 hover:bg-primary-50"
+          >
+            Escribir a soporte@fpt.com.mx
+          </a>
+        </div>
       </div>
     </div>
   );

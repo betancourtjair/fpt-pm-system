@@ -601,29 +601,33 @@ function SeccionGanttProyecto({
                   );
                 })}
 
-              {filas
-                .filter((t) => t.dependenciaId && indicePorId.has(t.dependenciaId))
-                .map((t) => {
-                  const iDestino = indicePorId.get(t.id)!;
-                  const iOrigen = indicePorId.get(t.dependenciaId!)!;
-                  const origen = filas[iOrigen];
-                  const yOrigen = iOrigen * ROW_ALTO + ROW_ALTO / 2;
-                  const yDestino = iDestino * ROW_ALTO + ROW_ALTO / 2;
-                  const xOrigen = origen.x1;
-                  const xDestino = t.x0;
-                  const xMedio = xOrigen + Math.max((xDestino - xOrigen) / 2, 10);
-                  return (
-                    <path
-                      key={`dep-${t.id}`}
-                      d={`M ${xOrigen} ${yOrigen} C ${xMedio} ${yOrigen}, ${xMedio} ${yDestino}, ${xDestino - 8} ${yDestino}`}
-                      fill="none"
-                      stroke="#7E3FF2"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 3"
-                      markerEnd={`url(#${idMarcador})`}
-                    />
-                  );
-                })}
+              {filas.flatMap((t) =>
+                // Dependencias múltiples (cuarta ronda de mejoras) — una
+                // flecha por cada predecesora, en vez de una sola.
+                (t.dependencias ?? [])
+                  .filter((dep) => indicePorId.has(dep.id))
+                  .map((dep) => {
+                    const iDestino = indicePorId.get(t.id)!;
+                    const iOrigen = indicePorId.get(dep.id)!;
+                    const origen = filas[iOrigen];
+                    const yOrigen = iOrigen * ROW_ALTO + ROW_ALTO / 2;
+                    const yDestino = iDestino * ROW_ALTO + ROW_ALTO / 2;
+                    const xOrigen = origen.x1;
+                    const xDestino = t.x0;
+                    const xMedio = xOrigen + Math.max((xDestino - xOrigen) / 2, 10);
+                    return (
+                      <path
+                        key={`dep-${dep.id}-${t.id}`}
+                        d={`M ${xOrigen} ${yOrigen} C ${xMedio} ${yOrigen}, ${xMedio} ${yDestino}, ${xDestino - 8} ${yDestino}`}
+                        fill="none"
+                        stroke="#7E3FF2"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
+                        markerEnd={`url(#${idMarcador})`}
+                      />
+                    );
+                  }),
+              )}
             </svg>
           </div>
         </div>

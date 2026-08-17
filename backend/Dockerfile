@@ -1,4 +1,4 @@
-﻿# Imagen de producción del backend — usada por Render (ver PID sección 4.3)
+# Imagen de producción del backend — usada por Render (ver PID sección 4.3)
 # Node 22+ (no 20): @supabase/supabase-js necesita WebSocket nativo para su
 # módulo realtime, que Node 20 no trae — sin esto el proceso truena al
 # arrancar con "Node.js detected but native WebSocket not found" en cuanto

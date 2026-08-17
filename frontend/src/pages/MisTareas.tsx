@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { tareasApi, Tarea } from '../lib/api';
@@ -29,6 +29,10 @@ export default function MisTareas() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [soloPendientes, setSoloPendientes] = useState(true);
+  // Filtro por etiqueta (mejora funcional): multi-selección por chips, sin
+  // nada seleccionado se muestran todas — es un filtro que se combina con
+  // "Ocultar completadas" (AND), no lo reemplaza.
+  const [filtroEtiquetas, setFiltroEtiquetas] = useState<string[]>([]);
 
   useEffect(() => {
     tareasApi
@@ -38,7 +42,21 @@ export default function MisTareas() {
       .finally(() => setCargando(false));
   }, []);
 
-  const visibles = soloPendientes ? tareas.filter((t) => t.estatus !== 'completada') : tareas;
+  const etiquetasDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    tareas.forEach((t) => t.etiquetas.forEach((et) => set.add(et)));
+    return Array.from(set).sort();
+  }, [tareas]);
+
+  function toggleEtiqueta(et: string) {
+    setFiltroEtiquetas((prev) => (prev.includes(et) ? prev.filter((x) => x !== et) : [...prev, et]));
+  }
+
+  const visibles = tareas.filter((t) => {
+    if (soloPendientes && t.estatus === 'completada') return false;
+    if (filtroEtiquetas.length > 0 && !t.etiquetas.some((et) => filtroEtiquetas.includes(et))) return false;
+    return true;
+  });
 
   return (
     <Layout activo="mis-tareas">
@@ -53,6 +71,25 @@ export default function MisTareas() {
           Ocultar completadas
         </label>
       </div>
+
+      {etiquetasDisponibles.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-6 -mt-3">
+          {etiquetasDisponibles.map((et) => (
+            <button
+              type="button"
+              key={et}
+              onClick={() => toggleEtiqueta(et)}
+              className={`text-sm px-3 py-1.5 rounded-full border ${
+                filtroEtiquetas.includes(et)
+                  ? 'bg-primary-600 text-white border-primary-600'
+                  : 'border-gray-300 text-gray-600'
+              }`}
+            >
+              {et}
+            </button>
+          ))}
+        </div>
+      )}
 
       {cargando ? (
         <p className="text-gray-500 text-sm">Cargando…</p>
@@ -77,7 +114,21 @@ export default function MisTareas() {
             <tbody>
               {visibles.map((t) => (
                 <tr key={t.id} className="border-t border-gray-100 align-top">
-                  <td className="px-5 py-3 font-semibold text-primary-800">{t.nombre}</td>
+                  <td className="px-5 py-3 font-semibold text-primary-800">
+                    {t.nombre}
+                    {t.etiquetas.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {t.etiquetas.map((et) => (
+                          <span
+                            key={et}
+                            className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-gray-300 text-gray-600"
+                          >
+                            {et}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-gray-600">
                     {t.proyecto ? (
                       <Link to={`/proyectos/${t.proyecto.id}`} className="text-primary-600 hover:underline">

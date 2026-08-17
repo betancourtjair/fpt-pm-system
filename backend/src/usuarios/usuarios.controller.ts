@@ -45,6 +45,15 @@ export class UsuariosController {
   // ":id" quedara primero, una petición a "/usuarios/plantilla-excel"
   // haría match ahí (con "plantilla-excel" como si fuera el id) en vez de
   // llegar a este método.
+  // Vista de carga de trabajo (tercera ronda de mejoras) — va ANTES de
+  // "@Get(':id')" por el mismo motivo que "plantilla-excel"; mismos roles
+  // que ya pueden ver /usuarios (es su misma lista, con conteos encima).
+  @Roles('admin', 'director', 'gerente_area')
+  @Get('carga-trabajo')
+  cargaTrabajo(@CurrentUser() user: JwtPayload) {
+    return this.usuarios.cargaTrabajo(user);
+  }
+
   @Roles('admin')
   @Get('plantilla-excel')
   async plantillaExcel(@Res() res: Response) {

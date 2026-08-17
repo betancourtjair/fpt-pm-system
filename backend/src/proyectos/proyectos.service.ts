@@ -47,6 +47,30 @@ export class ProyectosService {
     return new Map(filas.map((d) => [d.id, colorEfectivo(d)]));
   }
 
+  // Equipo del proyecto (tercera ronda de mejoras, ver README sección 4):
+  // usado por el selector de menciones (@usuario) en comentarios — a
+  // diferencia de /usuarios (solo admin/director/gerente_area), cualquiera
+  // que pueda VER el proyecto puede consultar quién participa en él, para
+  // poder mencionarlo aunque sea colaborador.
+  async equipo(proyectoId: number, user: JwtPayload) {
+    const proyecto = await this.obtenerEntidad(proyectoId);
+    if (!(await this.puedeVer(proyecto, user))) {
+      throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
+    }
+    const filas: { id: number; nombre: string }[] = await this.usuarios.query(
+      `SELECT DISTINCT u.id, u.nombre FROM usuarios u
+       WHERE u.activo AND u.id IN (
+         SELECT responsable_id FROM proyectos WHERE id = $1 AND responsable_id IS NOT NULL
+         UNION SELECT creado_por FROM proyectos WHERE id = $1 AND creado_por IS NOT NULL
+         UNION SELECT responsable_id FROM tareas WHERE proyecto_id = $1 AND responsable_id IS NOT NULL
+         UNION SELECT tu.usuario_id FROM tarea_usuarios tu JOIN tareas t ON t.id = tu.tarea_id WHERE t.proyecto_id = $1
+       )
+       ORDER BY u.nombre ASC`,
+      [proyectoId],
+    );
+    return filas;
+  }
+
   // Presupuesto real vs. plan (prioridad 8): suma de gastos_proyecto por
   // proyecto, calculada una sola vez por request igual que los colores. Solo
   // se consulta para los proyectos que ya se van a serializar (ids === 'all'
@@ -96,6 +120,14 @@ export class ProyectosService {
       [user.sub],
     );
     return rows.map((r) => r.proyecto_id);
+  }
+
+  // Envoltorio público de idsEnAlcance() — usado por BusquedaService
+  // (búsqueda global, tercera ronda de mejoras) para acotar proyectos/
+  // tareas/comentarios al mismo alcance por rol que ya aplica en toda la
+  // app, sin duplicar la lógica de arriba.
+  async proyectoIdsEnAlcance(user: JwtPayload): Promise<number[] | 'all'> {
+    return this.idsEnAlcance(user);
   }
 
   async puedeVer(proyecto: Proyecto, user: JwtPayload): Promise<boolean> {
@@ -412,7 +444,11 @@ export class ProyectosService {
         porcentajeAvance: 0,
         prioridad: t.prioridad,
         responsableId: t.responsableId,
-        dependenciaId: null, // se remapea abajo, una vez que todas ya tienen id nuevo
+        // Dependencias múltiples: se remapean abajo, una vez que todas las
+        // tareas clonadas ya tienen su id nuevo.
+        recurrenciaTipo: t.recurrenciaTipo,
+        recurrenciaIntervalo: t.recurrenciaIntervalo,
+        creadoEn: new Date(),
       });
       const guardada = await this.tareasRepo.save(nueva);
       idsViejoANuevo.set(t.id, guardada.id);
@@ -422,8 +458,17 @@ export class ProyectosService {
     // no aplica para esta repetición).
     for (const t of tareasOriginales) {
       const nuevoId = idsViejoANuevo.get(t.id)!;
-      if (t.dependenciaId && idsViejoANuevo.has(t.dependenciaId)) {
-        await this.tareasRepo.update(nuevoId, { dependenciaId: idsViejoANuevo.get(t.dependenciaId) });
+      const dependencias: { depende_de_id: number }[] = await this.tareasRepo.query(
+        `SELECT depende_de_id FROM tarea_dependencias WHERE tarea_id = $1`,
+        [t.id],
+      );
+      for (const d of dependencias) {
+        if (idsViejoANuevo.has(d.depende_de_id)) {
+          await this.tareasRepo.query(
+            `INSERT INTO tarea_dependencias (tarea_id, depende_de_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [nuevoId, idsViejoANuevo.get(d.depende_de_id)],
+          );
+        }
       }
       const asignados: { usuario_id: number }[] = await this.tareasRepo.query(
         `SELECT usuario_id FROM tarea_usuarios WHERE tarea_id = $1`,

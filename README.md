@@ -225,6 +225,90 @@ perder lo que ya la hace más simple que MS Project):
    existía) — un Director recibe este aviso una sola vez por tarea, aunque
    se bloquee/desbloquee varias veces después.
 
+**Tercera ronda de mejoras** (acercar todavía más la herramienta a
+Monday.com, sobre la base ya construida en las dos rondas anteriores):
+
+1. Automatizaciones configurables por el usuario — en el detalle de un
+   proyecto, panel "Automatizaciones" (solo visible para quien puede
+   administrar el proyecto): crea reglas "si la tarea entra en tal
+   condición (prioridad/estatus/vencida, se pueden combinar), avisa a tal
+   persona (responsable / director del área / alguien en específico)".
+   Las reglas se evalúan solas cada vez que una tarea cambia, y solo
+   avisan la primera vez que la tarea ENTRA a cumplir la condición (no en
+   cada guardado subsecuente mientras sigue cumpliéndola) — mismo criterio
+   que ya usaba el aviso de "tarea bloqueada" de la segunda ronda.
+2. Subtareas / checklist dentro de una tarea — botón "Subtareas" junto a
+   "Archivos"/"Actividad": una lista de pendientes más finos que la tarea
+   misma (ej. "Confirmar con proveedor", "Subir el diseño final"). Marcar
+   un ítem como completado lo puede hacer cualquier asignado a la tarea o
+   quien administre el proyecto; editar/borrar el texto de un ítem es
+   solo de quien administra el proyecto.
+3. Etiquetas libres en tareas — texto libre además de la prioridad (ej.
+   "cliente-vip", "urgente-legal"), para que cada Dirección organice por
+   lo que necesite sin tocar el esquema. Se agregan como chips al crear o
+   editar una tarea, se muestran junto al nombre en la tabla, y hay un
+   filtro de un clic por etiqueta arriba de la tabla (también disponible
+   en "Mis tareas").
+4. Vista de carga de trabajo por persona — nueva pestaña "Carga de
+   trabajo" en el menú lateral (mismo alcance de roles que "Admin":
+   admin/director/gerente de área): cuántas tareas activas y cuántas
+   vencidas tiene cada persona dentro de tu alcance, para detectar de un
+   vistazo quién está saturado y quién puede tomar más.
+5. Bitácora de actividad por tarea — el panel que antes se llamaba
+   "Comentarios" ahora se llama "Actividad" y combina los comentarios con
+   los eventos del sistema de esa tarea (creación, cambios de estatus,
+   responsable o prioridad) en un solo feed ordenado por fecha.
+6. Búsqueda global — caja de búsqueda en el encabezado, disponible en
+   toda la app: busca a la vez en proyectos, tareas y comentarios,
+   siempre respetando lo que el usuario actual puede ver.
+7. Menciones (@usuario) en comentarios — al escribir "@" en un comentario
+   aparece un buscador de compañeros de ese proyecto; la persona
+   mencionada recibe una notificación in-app (campanita). La campanita
+   ahora combina dos fuentes de aviso (las alertas de siempre y estas
+   notificaciones nuevas, que sí pueden repetirse varias veces sobre la
+   misma tarea) en una sola lista ordenada por fecha.
+8. Vistas/filtros guardados por usuario — en "Proyectos", guarda la
+   combinación actual de búsqueda + filtros con un nombre y vuelve a
+   aplicarla después con un menú desplegable ("Vistas guardadas"), sin
+   tener que reconstruirla cada vez. Es información puramente personal:
+   cada quien ve y administra solo sus propias vistas guardadas.
+
+**Cuarta ronda de mejoras** (sobre la base de las tres rondas anteriores):
+
+1. Dependencias múltiples entre tareas — una tarea ahora puede depender de
+   varias otras a la vez (antes solo podía depender de una). En el
+   formulario de tarea, el campo "Depende de" es un selector de chips: la
+   tarea no puede iniciar hasta que TODAS las que elijas terminen. Se
+   sigue rechazando crear un ciclo de dependencias (A depende de B que
+   depende de A) y depender de una tarea de otro proyecto o con fechas
+   inconsistentes, igual que antes. El Gantt dibuja una flecha por cada
+   dependencia.
+2. Tareas recurrentes — al crear o editar una tarea, el campo "Tarea
+   recurrente" permite marcarla como diaria/semanal/mensual (con un
+   intervalo, ej. "cada 2 semanas"). Al completar una ocurrencia, el
+   sistema genera automáticamente la siguiente con las fechas recorridas
+   el periodo correspondiente; las dependencias no se copian a la nueva
+   ocurrencia (se revisan caso por caso). Se puede desactivar la
+   recurrencia en cualquier momento desde el mismo formulario.
+3. Plantillas de checklist reutilizables — desde el panel de "Subtareas"
+   de cualquier tarea, "Administrar plantillas" abre una biblioteca de
+   checklists compartida en toda la organización (ej. "Abrir sucursal
+   nueva" con sus pasos ya definidos); "Aplicar plantilla" agrega de un
+   clic todos los ítems de una plantilla como subtareas de la tarea
+   actual. Cualquiera puede aplicar una plantilla; solo quien la creó (o
+   un admin) puede eliminarla.
+4. Vista de portafolio — nueva pestaña "Portafolio" en el menú lateral,
+   visible para cualquiera que pueda ver al menos un proyecto: todos los
+   proyectos en una sola línea de tiempo compartida, agrupados por
+   Dirección, para ver de un vistazo los traslapes entre proyectos (a
+   diferencia del Gantt, que usa una escala independiente por proyecto).
+5. Reportes ejecutivo con tendencias — nueva pestaña "Reportes" (mismo
+   alcance de roles que "Carga de trabajo": admin/director/gerente de
+   área): una tabla resumen por Dirección (% de cumplimiento, tareas
+   vencidas, tiempo promedio de finalización) y dos gráficas de tendencia
+   mes contra mes (tareas creadas vs. completadas, automatizaciones
+   activadas), con selector de periodo (últimos 3/6/12 meses).
+
 No incluye todavía: permisos granulares adicionales más allá de los roles
 actuales, ni hardening de seguridad más allá de lo ya implementado (JWT,
 RBAC, cambio de contraseña obligatorio, límite de peticiones por IP). El

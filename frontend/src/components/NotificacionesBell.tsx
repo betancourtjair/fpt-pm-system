@@ -6,6 +6,10 @@ const ETIQUETA_TIPO: Record<Notificacion['tipo'], string> = {
   asignacion: 'Nueva asignación',
   '48h': 'Vence en 48 horas',
   '24h': 'Vence en 24 horas',
+  vencida: 'Tarea vencida',
+  bloqueada: 'Tarea bloqueada',
+  mencion: 'Te mencionaron',
+  automatizacion: 'Automatización',
 };
 
 function formatearFecha(iso: string) {
@@ -37,17 +41,19 @@ export default function NotificacionesBell() {
 
     const socket = getSocket();
     const alRecibir = (nueva: {
-      id: number;
+      id: string;
       tipo: Notificacion['tipo'];
       tareaId: number;
       tareaNombre: string;
       fechaProgramada: string;
+      mensaje?: string | null;
     }) => {
       setNotificaciones((prev) => [
         {
           id: nueva.id,
           tipo: nueva.tipo,
           tarea: { id: nueva.tareaId, nombre: nueva.tareaNombre },
+          mensaje: nueva.mensaje ?? null,
           fechaProgramada: nueva.fechaProgramada,
           leido: false,
         },
@@ -71,7 +77,7 @@ export default function NotificacionesBell() {
     return () => document.removeEventListener('mousedown', alClickFuera);
   }, []);
 
-  function marcarLeida(id: number) {
+  function marcarLeida(id: string) {
     setNotificaciones((prev) => prev.map((n) => (n.id === id ? { ...n, leido: true } : n)));
     setNoLeidas((n) => Math.max(0, n - 1));
     notificacionesApi.marcarLeida(id).catch(() => {});
@@ -124,7 +130,9 @@ export default function NotificacionesBell() {
                   {!n.leido && <span className="w-1.5 h-1.5 rounded-full bg-accent-500 flex-shrink-0" />}
                   <span className="text-xs font-semibold text-primary-700">{ETIQUETA_TIPO[n.tipo]}</span>
                 </div>
-                <p className="text-sm text-gray-800 truncate mt-0.5">{n.tarea?.nombre ?? 'Tarea'}</p>
+                <p className="text-sm text-gray-800 truncate mt-0.5">
+                  {n.mensaje ?? n.tarea?.nombre ?? 'Tarea'}
+                </p>
                 <p className="text-[11px] text-gray-400 mt-0.5">{formatearFecha(n.fechaProgramada)}</p>
               </button>
             ))}

@@ -117,7 +117,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @OnEvent('notificacion.creada')
   emitirNotificacionNueva(payload: {
     usuarioId: number;
-    notificacion: { id: number; tipo: string; tareaId: number; tareaNombre: string; fechaProgramada: Date };
+    // id llega como texto con prefijo ('a-<n>' de alertas_enviadas, 'p-<n>'
+    // de notificaciones_personalizadas — ver AlertasService/ComentariosService/
+    // AutomatizacionesService y NotificacionesController), no como número.
+    notificacion: { id: string; tipo: string; tareaId: number; tareaNombre: string; fechaProgramada: Date };
   }) {
     this.server.to(`usuario:${payload.usuarioId}`).emit('notificacion:nueva', payload.notificacion);
   }
