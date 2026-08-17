@@ -8,6 +8,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
+import { isEmail } from 'class-validator';
 import { Usuario } from '../entities/usuario.entity';
 import { Rol } from '../entities/rol.entity';
 import { Area } from '../entities/area.entity';
@@ -16,6 +18,57 @@ import { esDirector } from '../common/permisos.util';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
 import { AutorizarPresupuestoDto } from './dto/autorizar-presupuesto.dto';
+import {
+  generarPlantillaUsuariosExcel,
+  parsearUsuariosExcel,
+  FilaUsuarioExcel,
+} from './excel-usuarios.util';
+
+const DESCRIPCION_ROL: Record<string, string> = {
+  admin: 'Alcance global. Gestiona usuarios, roles, catálogo, proyectos, tareas y presupuesto.',
+  director:
+    'Alcance de su Dirección completa. Gestiona proyectos, tareas y presupuesto de todas las Áreas bajo su Dirección.',
+  gerente_area:
+    'Alcance de su Área. Gestiona proyectos y tareas donde su Área está involucrada; no gestiona presupuesto.',
+  colaborador:
+    'Alcance de lo asignado. Ve y actualiza el avance únicamente de las tareas donde es responsable o colaborador.',
+};
+
+// Sin caracteres ambiguos (0/O, 1/l/I) para que se puedan transcribir a
+// mano sin errores si hace falta.
+const MAYUS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const MINUS = 'abcdefghijkmnpqrstuvwxyz';
+const DIGITOS = '23456789';
+const SIMBOLOS = '!@#$%*?';
+
+function elegir(charset: string): string {
+  return charset[randomBytes(1)[0] % charset.length];
+}
+
+// Contraseña temporal aleatoria (12 caracteres, con mayúscula/minúscula/
+// dígito/símbolo garantizados) para las cuentas creadas por lote desde
+// Excel — el mismo criterio de "must_change_password" que ya usa el alta
+// individual se aplica aquí también.
+function generarPasswordTemporal(): string {
+  const base = [elegir(MAYUS), elegir(MINUS), elegir(DIGITOS), elegir(SIMBOLOS)];
+  const todos = MAYUS + MINUS + DIGITOS + SIMBOLOS;
+  while (base.length < 12) base.push(elegir(todos));
+  for (let i = base.length - 1; i > 0; i--) {
+    const j = randomBytes(1)[0] % (i + 1);
+    [base[i], base[j]] = [base[j], base[i]];
+  }
+  return base.join('');
+}
+
+export interface ResultadoFilaImportacion {
+  fila: number;
+  nombre: string;
+  email: string;
+  ok: boolean;
+  mensaje?: string;
+  rol?: string;
+  passwordTemporal?: string;
+}
 
 const RELACIONES = { rol: true, area: { direccion: true } } as const;
 
@@ -176,5 +229,138 @@ export class UsuariosService {
     objetivo.presupuestoAutorizadoEn = dto.autorizar ? new Date() : null;
     await this.usuarios.save(objetivo);
     return { ok: true, verPresupuestoAutorizado: objetivo.verPresupuestoAutorizado };
+  }
+
+  // Carga masiva de usuarios (admin) — ver excel-usuarios.util.ts para el
+  // formato exacto de la plantilla (hojas Instrucciones/Catálogo/Usuarios).
+  async generarPlantillaExcel(): Promise<Buffer> {
+    const [areas, roles] = await Promise.all([
+      this.areas.find({ relations: { direccion: true }, order: { direccionId: 'ASC', nombre: 'ASC' } }),
+      this.roles.find({ order: { id: 'ASC' } }),
+    ]);
+
+    const direcciones = Array.from(new Set(areas.map((a) => a.direccion.nombre)));
+    const areasConDireccion = areas.map((a) => ({ nombre: a.nombre, direccionNombre: a.direccion.nombre }));
+    const rolesConDescripcion = roles.map((r) => ({
+      nombre: r.nombre,
+      descripcion: DESCRIPCION_ROL[r.nombre] ?? '',
+    }));
+
+    return generarPlantillaUsuariosExcel(direcciones, areasConDireccion, rolesConDescripcion);
+  }
+
+  async importarExcel(buffer: Buffer): Promise<{
+    total: number;
+    creados: number;
+    conError: number;
+    resultados: ResultadoFilaImportacion[];
+  }> {
+    let filas: FilaUsuarioExcel[];
+    try {
+      filas = await parsearUsuariosExcel(buffer);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'No se pudo leer el archivo. Usa la plantilla descargada desde el sistema.',
+      );
+    }
+
+    if (filas.length === 0) {
+      throw new BadRequestException(
+        'El archivo no tiene filas para importar (revisa que hayas llenado la hoja "Usuarios" y borrado la fila de ejemplo).',
+      );
+    }
+
+    const [roles, areas, usuariosExistentes] = await Promise.all([
+      this.roles.find(),
+      this.areas.find({ relations: { direccion: true } }),
+      this.usuarios.find({ select: { email: true } }),
+    ]);
+
+    const emailsExistentes = new Set(usuariosExistentes.map((u) => u.email.toLowerCase()));
+    const emailsEnArchivo = new Set<string>();
+    const resultados: ResultadoFilaImportacion[] = [];
+
+    for (const fila of filas) {
+      const resultado = await this.procesarFilaImportacion(fila, roles, areas, emailsExistentes, emailsEnArchivo);
+      resultados.push(resultado);
+      if (resultado.ok) {
+        emailsExistentes.add(fila.email.toLowerCase());
+        emailsEnArchivo.add(fila.email.toLowerCase());
+      }
+    }
+
+    return {
+      total: resultados.length,
+      creados: resultados.filter((r) => r.ok).length,
+      conError: resultados.filter((r) => !r.ok).length,
+      resultados,
+    };
+  }
+
+  private async procesarFilaImportacion(
+    fila: FilaUsuarioExcel,
+    roles: Rol[],
+    areas: Area[],
+    emailsExistentes: Set<string>,
+    emailsEnArchivo: Set<string>,
+  ): Promise<ResultadoFilaImportacion> {
+    const base = { fila: fila.fila, nombre: fila.nombre, email: fila.email };
+
+    if (!fila.nombre || fila.nombre.length < 3) {
+      return { ...base, ok: false, mensaje: 'El nombre debe tener al menos 3 caracteres.' };
+    }
+    if (!fila.email || !isEmail(fila.email)) {
+      return { ...base, ok: false, mensaje: 'El correo electrónico no es válido.' };
+    }
+    const emailNormalizado = fila.email.toLowerCase();
+    if (emailsEnArchivo.has(emailNormalizado)) {
+      return { ...base, ok: false, mensaje: 'Correo duplicado dentro del mismo archivo.' };
+    }
+    if (emailsExistentes.has(emailNormalizado)) {
+      return { ...base, ok: false, mensaje: 'Ya existe un usuario con este correo en el sistema.' };
+    }
+
+    const rol = roles.find((r) => r.nombre.toLowerCase() === fila.rol.trim().toLowerCase());
+    if (!rol) {
+      return {
+        ...base,
+        ok: false,
+        mensaje: `Rol "${fila.rol}" no es válido. Usa: admin, director, gerente_area o colaborador.`,
+      };
+    }
+
+    let areaIdFinal: number | null = null;
+    if (rol.nombre !== 'admin') {
+      if (!fila.direccion || !fila.area) {
+        return { ...base, ok: false, mensaje: 'Los usuarios con este rol deben indicar Dirección y Área.' };
+      }
+      const area = areas.find(
+        (a) =>
+          a.nombre.toLowerCase() === fila.area.trim().toLowerCase() &&
+          a.direccion.nombre.toLowerCase() === fila.direccion.trim().toLowerCase(),
+      );
+      if (!area) {
+        return {
+          ...base,
+          ok: false,
+          mensaje: `El Área "${fila.area}" no pertenece a la Dirección "${fila.direccion}" (revisa la hoja Catálogo).`,
+        };
+      }
+      areaIdFinal = area.id;
+    }
+
+    const passwordTemporal = generarPasswordTemporal();
+    const usuario = this.usuarios.create({
+      nombre: fila.nombre,
+      email: fila.email,
+      passwordHash: await bcrypt.hash(passwordTemporal, 10),
+      rolId: rol.id,
+      areaId: areaIdFinal,
+      activo: true,
+      mustChangePassword: true,
+    });
+    await this.usuarios.save(usuario);
+
+    return { ...base, ok: true, rol: rol.nombre, passwordTemporal };
   }
 }

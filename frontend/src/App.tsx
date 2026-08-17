@@ -6,6 +6,9 @@ import Proyectos from './pages/Proyectos';
 import ProyectoDetalle from './pages/ProyectoDetalle';
 import Gantt from './pages/Gantt';
 import Usuarios from './pages/Usuarios';
+import Metodologia from './pages/Metodologia';
+import OlvidePassword from './pages/OlvidePassword';
+import RestablecerPassword from './pages/RestablecerPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -13,6 +16,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/olvide-password" element={<OlvidePassword />} />
+        <Route path="/restablecer-password" element={<RestablecerPassword />} />
         <Route
           path="/cambiar-password"
           element={
@@ -58,6 +63,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Usuarios />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/metodologia"
+          element={
+            <ProtectedRoute>
+              <Metodologia />
             </ProtectedRoute>
           }
         />

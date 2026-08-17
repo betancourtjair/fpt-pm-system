@@ -115,6 +115,17 @@ proyecto —con el refresco cada 2 minutos como respaldo si el socket se cae—,
 y notificaciones dentro de la app (campanita en el sidebar, reutiliza la
 misma tabla de alertas).
 
+Además: carga masiva de usuarios vía Excel en "Gestión de usuarios" (botón
+para descargar la plantilla con listas desplegables de Rol/Dirección/Área y
+botón para subirla ya llena — cada fila se valida por separado y al final se
+muestra una tabla con la contraseña temporal de cada cuenta creada), una
+pestaña de "Metodología" con la guía de cómo gestionar un proyecto de punta
+a punta con esta herramienta (desde la junta de arranque hasta el cierre),
+un enlace de Ayuda (`mailto:soporte@fpt.com.mx`) al pie del menú lateral, y
+recuperación de contraseña desde el login (enlace de un solo uso enviado por
+correo, válido 1 hora, con mensaje de respuesta siempre genérico para no
+revelar qué correos existen en el sistema).
+
 **Importante sobre el remitente de correo (`EMAIL_REMITENTE`):** debe ser una
 dirección `@fpt.com.mx` (el dominio raíz verificado en Resend). El subdominio
 `send.fpt.com.mx` que aparece en el DNS **no** es un dominio de envío válido

@@ -4,7 +4,7 @@ import { clearSession, getUsuario } from '../lib/api';
 import { cerrarSocket } from '../lib/socket';
 import NotificacionesBell from './NotificacionesBell';
 
-type ItemActivo = 'inicio' | 'proyectos' | 'gantt' | 'usuarios';
+type ItemActivo = 'inicio' | 'proyectos' | 'gantt' | 'usuarios' | 'metodologia';
 
 // Shell compartido (header + nav lateral) — extraído del Dashboard original
 // para que Proyectos/Gantt (Fase 1) usen la misma cáscara visual sin
@@ -43,21 +43,32 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
         </div>
       </header>
 
-      <nav className="bg-primary-950 py-5">
-        <Link to="/dashboard" className={itemClase('inicio')}>
-          Inicio
-        </Link>
-        <Link to="/proyectos" className={itemClase('proyectos')}>
-          Proyectos
-        </Link>
-        <Link to="/gantt" className={itemClase('gantt')}>
-          Diagrama de Gantt
-        </Link>
-        {Boolean(usuario?.permisos?.manage_users) && (
-          <Link to="/usuarios" className={itemClase('usuarios')}>
-            Usuarios
+      <nav className="bg-primary-950 py-5 flex flex-col h-[calc(100vh-64px)]">
+        <div className="flex-1">
+          <Link to="/dashboard" className={itemClase('inicio')}>
+            Inicio
           </Link>
-        )}
+          <Link to="/proyectos" className={itemClase('proyectos')}>
+            Proyectos
+          </Link>
+          <Link to="/gantt" className={itemClase('gantt')}>
+            Diagrama de Gantt
+          </Link>
+          <Link to="/metodologia" className={itemClase('metodologia')}>
+            Metodología
+          </Link>
+          {Boolean(usuario?.permisos?.manage_users) && (
+            <Link to="/usuarios" className={itemClase('usuarios')}>
+              Usuarios
+            </Link>
+          )}
+        </div>
+        <a
+          href="mailto:soporte@fpt.com.mx"
+          className="px-6 py-3 block text-primary-200 hover:bg-white/5 border-t border-white/10"
+        >
+          ¿Necesitas ayuda? Escríbenos
+        </a>
       </nav>
 
       <main className="p-8 bg-[#F4F2F8] overflow-auto">{children}</main>

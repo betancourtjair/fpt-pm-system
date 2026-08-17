@@ -37,7 +37,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
   ver_presupuesto_autorizado BOOLEAN DEFAULT FALSE,
   presupuesto_autorizado_por INT REFERENCES usuarios(id),
   presupuesto_autorizado_en TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  -- Recuperar contraseña (Fase 2 completa) — ver db/migrations/004_recuperar_password.sql
+  reset_password_token_hash VARCHAR(64),
+  reset_password_expira TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS proyectos (

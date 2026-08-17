@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Layout from '../components/Layout';
 import {
   catalogoApi,
@@ -6,6 +6,7 @@ import {
   usuariosApi,
   Direccion,
   Rol,
+  ResultadoImportacionExcel,
   UsuarioDirectorio,
 } from '../lib/api';
 
@@ -47,6 +48,17 @@ export default function Usuarios() {
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
+
+  // Carga masiva por Excel (PID sección 9.2) — descarga de plantilla y
+  // subida del archivo lleno, con una tabla de resultados por fila
+  // (incluye la contraseña temporal de cada cuenta creada).
+  const inputArchivoRef = useRef<HTMLInputElement>(null);
+  const [descargando, setDescargando] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [errorImportacion, setErrorImportacion] = useState<string | null>(null);
+  const [resultadoImportacion, setResultadoImportacion] = useState<ResultadoImportacionExcel | null>(
+    null,
+  );
 
   function cargar() {
     setLoading(true);
@@ -140,6 +152,44 @@ export default function Usuarios() {
     cargar();
   }
 
+  async function descargarPlantilla() {
+    setDescargando(true);
+    try {
+      const blob = await usuariosApi.descargarPlantilla();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Plantilla_Usuarios_FPT.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setErrorImportacion('No se pudo descargar la plantilla.');
+    } finally {
+      setDescargando(false);
+    }
+  }
+
+  async function onArchivoSeleccionado(e: ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo si hace falta reintentar
+    if (!archivo) return;
+
+    setErrorImportacion(null);
+    setResultadoImportacion(null);
+    setImportando(true);
+    try {
+      const resultado = await usuariosApi.importarExcel(archivo);
+      setResultadoImportacion(resultado);
+      cargar();
+    } catch (err: any) {
+      setErrorImportacion(err?.response?.data?.message || 'No se pudo procesar el archivo.');
+    } finally {
+      setImportando(false);
+    }
+  }
+
   if (!puedeGestionar) {
     return (
       <Layout activo="usuarios">
@@ -152,17 +202,110 @@ export default function Usuarios() {
 
   return (
     <Layout activo="usuarios">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <h1 className="font-display font-extrabold text-2xl text-primary-900">
           Gestión de usuarios
         </h1>
-        <button
-          onClick={abrirNuevo}
-          className="bg-accent-500 hover:bg-accent-600 text-gray-900 font-bold rounded-lg px-4 py-2 text-sm"
-        >
-          + Nuevo usuario
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={descargarPlantilla}
+            disabled={descargando}
+            className="bg-white border border-primary-200 hover:bg-primary-50 text-primary-800 font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {descargando ? 'Descargando…' : '⬇ Descargar plantilla'}
+          </button>
+          <button
+            onClick={() => inputArchivoRef.current?.click()}
+            disabled={importando}
+            className="bg-white border border-primary-200 hover:bg-primary-50 text-primary-800 font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {importando ? 'Cargando…' : '⬆ Cargar Excel'}
+          </button>
+          <input
+            ref={inputArchivoRef}
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            onChange={onArchivoSeleccionado}
+          />
+          <button
+            onClick={abrirNuevo}
+            className="bg-accent-500 hover:bg-accent-600 text-gray-900 font-bold rounded-lg px-4 py-2 text-sm"
+          >
+            + Nuevo usuario
+          </button>
+        </div>
       </div>
+
+      {errorImportacion && (
+        <p className="text-danger-500 text-sm font-medium mb-4">{errorImportacion}</p>
+      )}
+
+      {resultadoImportacion && (
+        <div className="bg-white rounded-2xl shadow-card p-6 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display font-bold text-base">
+              Resultado de la carga: {resultadoImportacion.creados} de {resultadoImportacion.total}{' '}
+              usuarios creados
+              {resultadoImportacion.conError > 0 && (
+                <span className="text-danger-500"> · {resultadoImportacion.conError} con error</span>
+              )}
+            </h2>
+            <button
+              onClick={() => setResultadoImportacion(null)}
+              className="text-gray-500 text-sm font-semibold hover:underline"
+            >
+              Cerrar
+            </button>
+          </div>
+          {resultadoImportacion.creados > 0 && (
+            <p className="text-xs text-gray-500 mb-3">
+              Comparte cada contraseña temporal únicamente con su dueño (idealmente 1 a 1, no por
+              correo grupal ni chat de equipo). Todas las cuentas deben cambiarla en su primer
+              inicio de sesión.
+            </p>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-primary-50 text-primary-800 text-left">
+                <tr>
+                  <th className="px-3 py-2 font-bold">Fila</th>
+                  <th className="px-3 py-2 font-bold">Nombre</th>
+                  <th className="px-3 py-2 font-bold">Correo</th>
+                  <th className="px-3 py-2 font-bold">Resultado</th>
+                  <th className="px-3 py-2 font-bold">Contraseña temporal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultadoImportacion.resultados.map((r) => (
+                  <tr key={r.fila} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-gray-500">{r.fila}</td>
+                    <td className="px-3 py-2 font-semibold text-primary-800">{r.nombre || '—'}</td>
+                    <td className="px-3 py-2 text-gray-600">{r.email || '—'}</td>
+                    <td className="px-3 py-2">
+                      {r.ok ? (
+                        <span className="text-xs font-bold uppercase text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
+                          Creado ({r.rol})
+                        </span>
+                      ) : (
+                        <span
+                          className="text-xs font-bold text-danger-500 bg-danger-500/10 px-2 py-0.5 rounded-full"
+                          title={r.mensaje}
+                        >
+                          {r.mensaje}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-700">
+                      {r.passwordTemporal ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {(modo === 'nuevo' || typeof modo === 'number') && (
         <form onSubmit={guardar} className="bg-white rounded-2xl shadow-card p-6 mb-6 space-y-4">

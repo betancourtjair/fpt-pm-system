@@ -49,4 +49,14 @@ export class Usuario {
 
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;
+
+  // Recuperar contraseña (Fase 2 completa): se guarda solo el hash SHA-256
+  // del token de un solo uso, nunca el token en claro — igual criterio que
+  // password_hash. reset_password_expira invalida el token aunque nadie lo
+  // haya usado, y ambos se limpian al usarlo (o al pedir uno nuevo).
+  @Column({ name: 'reset_password_token_hash', type: 'varchar', length: 64, nullable: true })
+  resetPasswordTokenHash: string | null;
+
+  @Column({ name: 'reset_password_expira', type: 'timestamptz', nullable: true })
+  resetPasswordExpira: Date | null;
 }

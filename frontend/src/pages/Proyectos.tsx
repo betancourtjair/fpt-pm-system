@@ -46,7 +46,14 @@ export default function Proyectos() {
     cargar();
     if (puedeCrear) {
       catalogoApi.direcciones().then(setDirecciones).catch(() => {});
-      usuariosApi.listar().then(setUsuarios).catch(() => {});
+      // El rol "admin" es de alcance global (gestión de cuentas, eliminar
+      // proyectos si hace falta) y no debe poder quedar como Responsable
+      // operativo de un proyecto — se excluye aquí igual que en el
+      // formulario de tareas (ver ProyectoDetalle.tsx).
+      usuariosApi
+        .listar()
+        .then((lista) => setUsuarios(lista.filter((u) => u.rol !== 'admin')))
+        .catch(() => {});
     }
   }, []);
 

@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api, setSession } from '../lib/api';
 
 export default function Login() {
@@ -66,6 +66,12 @@ export default function Login() {
           >
             {loading ? 'Entrando…' : 'Iniciar sesión'}
           </button>
+
+          <div className="text-center">
+            <Link to="/olvide-password" className="text-sm text-primary-600 font-semibold hover:underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
         </form>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { In, Repository } from 'typeorm';
 import { AlertaEnviada, TipoAlerta } from '../entities/alerta-enviada.entity';
 import { Tarea } from '../entities/tarea.entity';
 import { Usuario } from '../entities/usuario.entity';
-import { EmailService } from './email.service';
+import { EmailService } from '../common/email.service';
 import {
   asuntoAsignacion,
   asuntoRecordatorio,

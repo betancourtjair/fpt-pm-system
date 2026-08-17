@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -6,8 +7,13 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -32,6 +38,30 @@ export class UsuariosController {
   @Get()
   listar(@CurrentUser() user: JwtPayload) {
     return this.usuarios.listar(user);
+  }
+
+  // IMPORTANTE: estas dos rutas van ANTES de "@Get(':id')" — Nest resuelve
+  // las rutas de un controlador en el orden en que se declaran, así que si
+  // ":id" quedara primero, una petición a "/usuarios/plantilla-excel"
+  // haría match ahí (con "plantilla-excel" como si fuera el id) en vez de
+  // llegar a este método.
+  @Roles('admin')
+  @Get('plantilla-excel')
+  async plantillaExcel(@Res() res: Response) {
+    const buffer = await this.usuarios.generarPlantillaExcel();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="Plantilla_Usuarios_FPT.xlsx"',
+    });
+    res.send(buffer);
+  }
+
+  @Roles('admin')
+  @Post('importar-excel')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  importarExcel(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Sube un archivo .xlsx (usa la plantilla descargada desde el sistema).');
+    return this.usuarios.importarExcel(file.buffer);
   }
 
   @Roles('admin')

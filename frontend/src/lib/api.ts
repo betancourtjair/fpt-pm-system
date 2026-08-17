@@ -117,6 +117,23 @@ export type UsuarioDirectorio = {
   direccion: string | null;
 };
 
+export type ResultadoFilaImportacion = {
+  fila: number;
+  nombre: string;
+  email: string;
+  ok: boolean;
+  mensaje?: string;
+  rol?: string;
+  passwordTemporal?: string;
+};
+
+export type ResultadoImportacionExcel = {
+  total: number;
+  creados: number;
+  conError: number;
+  resultados: ResultadoFilaImportacion[];
+};
+
 export const usuariosApi = {
   listar: () => api.get<UsuarioDirectorio[]>('/usuarios').then((r) => r.data),
   crear: (dto: Record<string, unknown>) =>
@@ -125,6 +142,16 @@ export const usuariosApi = {
     api.patch<UsuarioDirectorio>(`/usuarios/${id}`, dto).then((r) => r.data),
   autorizarPresupuesto: (id: number, autorizar: boolean) =>
     api.patch(`/usuarios/${id}/autorizar-presupuesto`, { autorizar }).then((r) => r.data),
+  // Carga masiva (admin) — PID sección 9.2, alta de usuarios por lote.
+  descargarPlantilla: () =>
+    api.get('/usuarios/plantilla-excel', { responseType: 'blob' }).then((r) => r.data as Blob),
+  importarExcel: (archivo: File) => {
+    const form = new FormData();
+    form.append('file', archivo);
+    return api
+      .post<ResultadoImportacionExcel>('/usuarios/importar-excel', form)
+      .then((r) => r.data);
+  },
 };
 
 export type Rol = { id: number; nombre: string; permisos: Record<string, unknown> };
