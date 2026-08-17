@@ -64,9 +64,12 @@ api.interceptors.response.use(
 // endpoints para que las páginas no repitan rutas/URLs a mano.
 // ---------------------------------------------------------------------------
 
+// El color se administra por Dirección (no por Área) — cada Área hereda
+// el color de su Dirección, así que sigue trayendo `color` para no tener
+// que repetir esa lógica en cada pantalla que pinta chips/filas de Área.
 export type AreaConColor = { id: number; nombre: string; direccionId?: number; color: string };
 
-export type Direccion = { id: number; nombre: string; areas: AreaConColor[] };
+export type Direccion = { id: number; nombre: string; color: string; areas: AreaConColor[] };
 
 export type UsuarioResumen = { id: number; nombre: string; email?: string; rol?: string };
 
@@ -176,11 +179,10 @@ export type Rol = { id: number; nombre: string; permisos: Record<string, unknown
 export const catalogoApi = {
   direcciones: () => api.get<Direccion[]>('/direcciones').then((r) => r.data),
   roles: () => api.get<Rol[]>('/roles').then((r) => r.data),
-  // Color por Área (PID: "que cada área tenga un color específico"; el
-  // modo admin puede personalizarlo, el resto solo lo lee).
-  areas: () => api.get<AreaConColor[]>('/areas').then((r) => r.data),
-  actualizarColorArea: (areaId: number, color: string) =>
-    api.patch<AreaConColor>(`/areas/${areaId}/color`, { color }).then((r) => r.data),
+  // Color por Dirección (el admin lo personaliza desde "Admin"; cada Área
+  // hereda el color de su Dirección — ver Dashboard/Proyectos).
+  actualizarColorDireccion: (direccionId: number, color: string) =>
+    api.patch<Direccion>(`/direcciones/${direccionId}/color`, { color }).then((r) => r.data),
 };
 
 // ---------------------------------------------------------------------------

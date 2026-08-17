@@ -244,18 +244,23 @@ export default function Proyectos() {
               </tr>
             </thead>
             <tbody>
-              {proyectos.map((p) => {
-                // Color por Área (PID: "que cada área tenga un color
-                // específico") — un proyecto puede tener varias áreas; se
-                // usa la primera como acento visual de la fila y se
-                // muestran todas como chips individuales en su columna.
+              {proyectos.map((p, i) => {
+                // El borde de acento usa el color de la Dirección del
+                // proyecto (un proyecto puede tener varias áreas; se usa
+                // la primera). El fondo, en cambio, alterna claro/oscuro
+                // por posición —como el banding de una tabla de Excel—
+                // para que filas consecutivas siempre se distingan entre
+                // sí, incluso cuando comparten Dirección (PID: "que se
+                // diferencien por color... como las tablas de Excel").
                 const colorFila = p.areas[0]?.color || '#94a3b8';
                 return (
                   <tr
                     key={p.id}
                     onClick={() => navigate(`/proyectos/${p.id}`)}
-                    style={{ borderLeft: `4px solid ${colorFila}`, backgroundColor: `${colorFila}14` }}
-                    className="border-t border-gray-100 cursor-pointer transition hover:brightness-[0.97]"
+                    style={{ borderLeft: `4px solid ${colorFila}` }}
+                    className={`border-t border-gray-100 cursor-pointer transition hover:bg-primary-100/60 ${
+                      i % 2 === 1 ? 'bg-gray-50' : 'bg-white'
+                    }`}
                   >
                     <td className="px-5 py-3 font-semibold text-primary-700">{p.nombre}</td>
                     <td className="px-5 py-3 text-gray-600">

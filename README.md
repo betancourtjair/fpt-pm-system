@@ -128,13 +128,19 @@ revelar qué correos existen en el sistema).
 
 También: logo oficial de FPT en login, recuperación de contraseña, favicon y
 encabezado de la app; en "Proyectos" cualquier parte de la fila navega al
-detalle (no solo el nombre); cada Área tiene un color propio que colorea la
-fila del proyecto y sus chips (por defecto uno de una paleta fija asignada
-por id — ver `backend/src/catalogo/paleta-colores.ts` — personalizable por un
-admin desde el nuevo widget "Proyectos por Área" en el Inicio, que además
-muestra cuántos proyectos hay por cada Área); y cierre de sesión automático
-cada 3 horas (respaldado también del lado del servidor con `JWT_EXPIRES_IN`,
-ver sección 2).
+detalle (no solo el nombre); y cierre de sesión automático cada 3 horas
+(respaldado también del lado del servidor con `JWT_EXPIRES_IN`, ver sección 2).
+
+Color por Dirección: cada Dirección tiene un color propio (por defecto uno de
+una paleta fija asignada por id — ver `backend/src/catalogo/paleta-colores.ts`
+— personalizable solo por un admin desde el menú "Admin", antes llamado
+"Usuarios"); cada Área hereda el color de su Dirección. Ese color pinta el
+acento de cada fila en "Proyectos" y sus chips de Área — las filas además
+alternan fondo claro/oscuro (estilo Excel) para que dos proyectos consecutivos
+siempre se distingan entre sí, aunque compartan Dirección. En "Inicio" hay un
+resumen colapsable "Proyectos por Dirección": por default solo muestra el
+conteo por Dirección, y al hacer click en una se despliega el detalle por
+Área debajo.
 
 **Importante sobre el remitente de correo (`EMAIL_REMITENTE`):** debe ser una
 dirección `@fpt.com.mx` (el dominio raíz verificado en Resend). El subdominio

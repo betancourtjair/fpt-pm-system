@@ -1,59 +1,60 @@
 import { useEffect, useState } from 'react';
-import { getUsuario, catalogoApi, proyectosApi, AreaConColor, Direccion, Proyecto } from '../lib/api';
+import { getUsuario, catalogoApi, proyectosApi, Direccion, Proyecto } from '../lib/api';
 import Layout from '../components/Layout';
 
 // Pantalla de inicio: confirma que login + JWT + catálogo funcionan contra
-// el backend real, y agrega el resumen "Proyectos por Área" (PID: "agregar
-// un dashboard donde pueda ver la cantidad de proyectos por áreas"). Cada
-// Área tiene un color — por defecto uno de una paleta fija asignada por id
-// (ver backend paleta-colores.ts), y un admin puede personalizarlo aquí
-// mismo con un selector de color.
+// el backend real, y muestra "Proyectos por Dirección" (PID: "agregar un
+// dashboard donde pueda ver la cantidad de proyectos"). Por default solo
+// se ve el resumen por Dirección — al hacer click se despliega el detalle
+// por Área debajo (PID: "que la lista de inicio sea desplegable"). El
+// color de cada Dirección se administra desde "Admin" (ver Usuarios.tsx);
+// aquí es de solo lectura.
 export default function Dashboard() {
   const [direcciones, setDirecciones] = useState<Direccion[]>([]);
-  const [areas, setAreas] = useState<AreaConColor[]>([]);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [guardandoColorId, setGuardandoColorId] = useState<number | null>(null);
+  const [expandidas, setExpandidas] = useState<Set<number>>(new Set());
   const usuario = getUsuario();
-  const esAdmin = usuario?.rol === 'admin';
 
-  function cargarTodo() {
-    setLoading(true);
-    Promise.all([catalogoApi.direcciones(), catalogoApi.areas(), proyectosApi.listar()])
-      .then(([dirs, areasCat, proyectosLista]) => {
+  useEffect(() => {
+    Promise.all([catalogoApi.direcciones(), proyectosApi.listar()])
+      .then(([dirs, proyectosLista]) => {
         setDirecciones(dirs);
-        setAreas(areasCat);
         setProyectos(proyectosLista);
       })
       .catch(() => setError('No se pudo cargar el catálogo desde el backend.'))
       .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    cargarTodo();
   }, []);
 
-  // Un proyecto puede tener varias áreas — cada una suma 1 a su conteo.
+  function alternarExpandida(direccionId: number) {
+    setExpandidas((prev) => {
+      const siguiente = new Set(prev);
+      if (siguiente.has(direccionId)) siguiente.delete(direccionId);
+      else siguiente.add(direccionId);
+      return siguiente;
+    });
+  }
+
+  // Un proyecto puede tener varias áreas — cada una suma 1 a su conteo, y
+  // cada proyecto suma 1 (sin duplicar) al conteo de su(s) Dirección(es).
   const conteoPorArea = new Map<number, number>();
+  const proyectosPorDireccion = new Map<number, Set<number>>();
   for (const p of proyectos) {
     for (const a of p.areas) {
       conteoPorArea.set(a.id, (conteoPorArea.get(a.id) ?? 0) + 1);
+      if (a.direccionId !== undefined) {
+        if (!proyectosPorDireccion.has(a.direccionId)) {
+          proyectosPorDireccion.set(a.direccionId, new Set());
+        }
+        proyectosPorDireccion.get(a.direccionId)!.add(p.id);
+      }
     }
   }
-  const maxConteo = Math.max(1, ...Array.from(conteoPorArea.values()));
-
-  async function cambiarColor(areaId: number, color: string) {
-    setGuardandoColorId(areaId);
-    try {
-      await catalogoApi.actualizarColorArea(areaId, color);
-      setAreas((prev) => prev.map((a) => (a.id === areaId ? { ...a, color } : a)));
-    } catch {
-      setError('No se pudo guardar el color del área.');
-    } finally {
-      setGuardandoColorId(null);
-    }
-  }
+  const maxConteoDireccion = Math.max(
+    1,
+    ...direcciones.map((d) => proyectosPorDireccion.get(d.id)?.size ?? 0),
+  );
 
   return (
     <Layout activo="inicio">
@@ -73,71 +74,66 @@ export default function Dashboard() {
       {error && <p className="text-danger-500 text-sm mb-4">{error}</p>}
 
       {!loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl shadow-card p-6">
-            <h2 className="font-display font-bold text-base mb-1">Proyectos por Área</h2>
-            <p className="text-xs text-gray-400 mb-4">
-              {esAdmin
-                ? 'Solo tú (admin) puedes cambiar el color de cada área.'
-                : 'El color de cada área lo define un administrador.'}
-            </p>
-            <div className="space-y-3">
-              {areas.map((a) => {
-                const conteo = conteoPorArea.get(a.id) ?? 0;
-                const anchoPct = Math.max(4, Math.round((conteo / maxConteo) * 100));
-                return (
-                  <div key={a.id} className="flex items-center gap-3">
-                    <span className="w-32 shrink-0 text-sm text-gray-700 truncate" title={a.nombre}>
-                      {a.nombre}
+        <div className="bg-white rounded-2xl shadow-card p-6 max-w-3xl">
+          <h2 className="font-display font-bold text-base mb-1">Proyectos por Dirección</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Da click en una Dirección para ver el detalle por Área.
+          </p>
+          <div className="space-y-2">
+            {direcciones.map((d) => {
+              const total = proyectosPorDireccion.get(d.id)?.size ?? 0;
+              const anchoPct = Math.max(4, Math.round((total / maxConteoDireccion) * 100));
+              const abierta = expandidas.has(d.id);
+              const maxConteoArea = Math.max(1, ...d.areas.map((a) => conteoPorArea.get(a.id) ?? 0));
+              return (
+                <div key={d.id} className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div
+                    onClick={() => alternarExpandida(d.id)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 transition"
+                  >
+                    <span className="text-gray-400 text-xs w-3 shrink-0">{abierta ? '▾' : '▸'}</span>
+                    <span className="w-36 shrink-0 text-sm font-semibold text-gray-700 truncate" title={d.nombre}>
+                      {d.nombre}
                     </span>
                     <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
                       <div
                         className="h-5 rounded-full flex items-center justify-end px-2 transition-all"
-                        style={{ width: `${anchoPct}%`, backgroundColor: a.color }}
+                        style={{ width: `${anchoPct}%`, backgroundColor: d.color }}
                       >
-                        {conteo > 0 && (
-                          <span className="text-xs font-bold text-white">{conteo}</span>
-                        )}
+                        {total > 0 && <span className="text-xs font-bold text-white">{total}</span>}
                       </div>
                     </div>
-                    {conteo === 0 && <span className="text-xs text-gray-400 w-4 text-center">0</span>}
-                    {esAdmin && (
-                      <input
-                        type="color"
-                        value={a.color}
-                        disabled={guardandoColorId === a.id}
-                        onChange={(e) => cambiarColor(a.id, e.target.value)}
-                        title={`Color de ${a.nombre}`}
-                        className="w-7 h-7 rounded border border-gray-200 cursor-pointer disabled:opacity-50"
-                      />
-                    )}
+                    {total === 0 && <span className="text-xs text-gray-400 w-4 text-center">0</span>}
                   </div>
-                );
-              })}
-              {areas.length === 0 && <p className="text-sm text-gray-400">Sin áreas registradas.</p>}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-card p-6">
-            <h2 className="font-display font-bold text-base mb-4">Direcciones y Áreas</h2>
-            <div className="grid grid-cols-1 gap-3">
-              {direcciones.map((d) => (
-                <div key={d.id} className="border border-gray-200 rounded-xl p-4">
-                  <p className="font-bold text-primary-800 mb-2">{d.nombre}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {d.areas.map((a) => (
-                      <span
-                        key={a.id}
-                        className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
-                        style={{ backgroundColor: a.color }}
-                      >
-                        {a.nombre}
-                      </span>
-                    ))}
-                  </div>
+                  {abierta && (
+                    <div className="bg-gray-50/60 border-t border-gray-100 px-3 py-2.5 pl-10 space-y-1.5">
+                      {d.areas.map((a) => {
+                        const conteo = conteoPorArea.get(a.id) ?? 0;
+                        const anchoArea = Math.max(4, Math.round((conteo / maxConteoArea) * 100));
+                        return (
+                          <div key={a.id} className="flex items-center gap-2">
+                            <span className="w-32 shrink-0 text-xs text-gray-600 truncate" title={a.nombre}>
+                              {a.nombre}
+                            </span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-3.5 overflow-hidden">
+                              <div
+                                className="h-3.5 rounded-full"
+                                style={{ width: `${anchoArea}%`, backgroundColor: a.color }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500 w-4 text-right">{conteo}</span>
+                          </div>
+                        );
+                      })}
+                      {d.areas.length === 0 && (
+                        <p className="text-xs text-gray-400">Esta Dirección no tiene Áreas.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })}
+            {direcciones.length === 0 && <p className="text-sm text-gray-400">Sin Direcciones registradas.</p>}
           </div>
         </div>
       )}

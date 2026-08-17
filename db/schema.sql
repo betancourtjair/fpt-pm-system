@@ -10,7 +10,8 @@
 CREATE TABLE IF NOT EXISTS direcciones (
   id SERIAL PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
-  descripcion TEXT
+  descripcion TEXT,
+  color VARCHAR(7)
 );
 
 CREATE TABLE IF NOT EXISTS areas (

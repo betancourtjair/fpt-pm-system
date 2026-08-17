@@ -75,7 +75,7 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
           </Link>
           {Boolean(usuario?.permisos?.manage_users) && (
             <Link to="/usuarios" className={itemClase('usuarios')}>
-              Usuarios
+              Admin
             </Link>
           )}
         </div>

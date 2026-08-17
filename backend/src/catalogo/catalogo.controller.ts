@@ -9,11 +9,12 @@ import { Direccion } from '../entities/direccion.entity';
 import { Area } from '../entities/area.entity';
 import { Rol } from '../entities/rol.entity';
 import { colorEfectivo } from './paleta-colores';
-import { ActualizarColorAreaDto } from './dto/actualizar-color-area.dto';
+import { ActualizarColorDireccionDto } from './dto/actualizar-color-direccion.dto';
 
 // Lectura del catálogo (Direcciones/Áreas/Roles) para poblar selects en el frontend.
-// Cualquier usuario autenticado puede leer el catálogo; editar (por ahora
-// solo el color por Área) es exclusivo de admin.
+// Cualquier usuario autenticado puede leer el catálogo; editar (el color)
+// es exclusivo de admin. El color se administra por Dirección nada más
+// (más simple que por Área) — cada Área hereda el color de su Dirección.
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class CatalogoController {
@@ -29,15 +30,19 @@ export class CatalogoController {
       order: { id: 'ASC' },
       relations: { areas: true },
     });
-    // Cada área siempre trae un color resuelto (el propio o el default por
-    // paleta) para que el frontend nunca tenga que duplicar esa lógica.
-    return filas.map((d) => ({
-      ...d,
-      areas: (d.areas ?? [])
-        .slice()
-        .sort((a, b) => a.id - b.id)
-        .map((a) => ({ ...a, color: colorEfectivo(a) })),
-    }));
+    return filas.map((d) => {
+      const color = colorEfectivo(d);
+      return {
+        ...d,
+        color,
+        // Cada área hereda el color de su Dirección — ya no se administra
+        // color por Área de forma independiente.
+        areas: (d.areas ?? [])
+          .slice()
+          .sort((a, b) => a.id - b.id)
+          .map((a) => ({ ...a, color })),
+      };
+    });
   }
 
   @Get('areas')
@@ -46,7 +51,7 @@ export class CatalogoController {
       order: { id: 'ASC' },
       relations: { direccion: true },
     });
-    return filas.map((a) => ({ ...a, color: colorEfectivo(a) }));
+    return filas.map((a) => ({ ...a, color: colorEfectivo(a.direccion) }));
   }
 
   @Get('roles')
@@ -54,16 +59,16 @@ export class CatalogoController {
     return this.roles.find({ order: { id: 'ASC' } });
   }
 
-  // Personalización de color por Área — PID: "que el modo admin te permita
-  // elegir el color por área". Solo admin; el resto del catálogo es de
-  // solo lectura para cualquier usuario autenticado.
+  // Personalización de color por Dirección — PID: "agrega la opción para
+  // hacer el cambio de color de las direcciones". Solo admin; el resto del
+  // catálogo es de solo lectura para cualquier usuario autenticado.
   @Roles('admin')
-  @Patch('areas/:id/color')
-  async actualizarColor(@Param('id', ParseIntPipe) id: number, @Body() dto: ActualizarColorAreaDto) {
-    const area = await this.areas.findOne({ where: { id } });
-    if (!area) throw new NotFoundException('Área no encontrada.');
-    area.color = dto.color;
-    await this.areas.save(area);
-    return { ...area, color: colorEfectivo(area) };
+  @Patch('direcciones/:id/color')
+  async actualizarColor(@Param('id', ParseIntPipe) id: number, @Body() dto: ActualizarColorDireccionDto) {
+    const direccion = await this.direcciones.findOne({ where: { id } });
+    if (!direccion) throw new NotFoundException('Dirección no encontrada.');
+    direccion.color = dto.color;
+    await this.direcciones.save(direccion);
+    return { ...direccion, color: colorEfectivo(direccion) };
   }
 }

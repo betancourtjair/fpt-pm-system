@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Proyecto } from '../entities/proyecto.entity';
 import { Area } from '../entities/area.entity';
+import { Direccion } from '../entities/direccion.entity';
 import { Usuario } from '../entities/usuario.entity';
 import { JwtPayload } from '../auth/auth.service';
 import { CreateProyectoDto } from './dto/create-proyecto.dto';
@@ -28,7 +29,16 @@ export class ProyectosService {
     @InjectRepository(Proyecto) private readonly proyectos: Repository<Proyecto>,
     @InjectRepository(Area) private readonly areas: Repository<Area>,
     @InjectRepository(Usuario) private readonly usuarios: Repository<Usuario>,
+    @InjectRepository(Direccion) private readonly direcciones: Repository<Direccion>,
   ) {}
+
+  // El color se administra por Dirección (no por Área — más simple de
+  // mantener); cada Área "hereda" el color de su Dirección para pintar
+  // filas/chips en Proyectos. Se resuelve una sola vez por request.
+  private async mapaColoresPorDireccion(): Promise<Map<number, string>> {
+    const filas = await this.direcciones.find();
+    return new Map(filas.map((d) => [d.id, colorEfectivo(d)]));
+  }
 
   // ------------------------------------------------------------------
   // Alcance por rol (PID sección 9.2): admin ve todo; director ve los
@@ -92,7 +102,12 @@ export class ProyectosService {
     return yo?.verPresupuestoAutorizado ?? false;
   }
 
-  private serializar(proyecto: Proyecto, user: JwtPayload, autorizado: boolean) {
+  private serializar(
+    proyecto: Proyecto,
+    user: JwtPayload,
+    autorizado: boolean,
+    coloresPorDireccion: Map<number, string>,
+  ) {
     const base: Record<string, unknown> = {
       id: proyecto.id,
       nombre: proyecto.nombre,
@@ -109,7 +124,7 @@ export class ProyectosService {
         id: a.id,
         nombre: a.nombre,
         direccionId: a.direccionId,
-        color: colorEfectivo(a),
+        color: coloresPorDireccion.get(a.direccionId) ?? '#94a3b8',
       })),
     };
     if (puedeVerPresupuesto(user, autorizado)) {
@@ -127,8 +142,11 @@ export class ProyectosService {
       relations: RELACIONES,
       order: { id: 'ASC' },
     });
-    const autorizado = await this.autorizacionPresupuesto(user);
-    return proyectos.map((p) => this.serializar(p, user, autorizado));
+    const [autorizado, coloresPorDireccion] = await Promise.all([
+      this.autorizacionPresupuesto(user),
+      this.mapaColoresPorDireccion(),
+    ]);
+    return proyectos.map((p) => this.serializar(p, user, autorizado, coloresPorDireccion));
   }
 
   async obtenerEntidad(id: number): Promise<Proyecto> {
@@ -142,8 +160,11 @@ export class ProyectosService {
     if (!(await this.puedeVer(proyecto, user))) {
       throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
     }
-    const autorizado = await this.autorizacionPresupuesto(user);
-    return this.serializar(proyecto, user, autorizado);
+    const [autorizado, coloresPorDireccion] = await Promise.all([
+      this.autorizacionPresupuesto(user),
+      this.mapaColoresPorDireccion(),
+    ]);
+    return this.serializar(proyecto, user, autorizado, coloresPorDireccion);
   }
 
   private async validarAreasEnAlcance(areaIds: number[], user: JwtPayload) {

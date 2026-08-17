@@ -49,6 +49,12 @@ export default function Usuarios() {
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
 
+  // Colores por Dirección — PID: "agrega [en Admin] la opción para hacer
+  // el cambio de color de las direcciones". Cada Área hereda el color de
+  // su Dirección (Dashboard y Proyectos lo pintan, aquí solo se edita).
+  const [guardandoColorId, setGuardandoColorId] = useState<number | null>(null);
+  const [errorColor, setErrorColor] = useState<string | null>(null);
+
   // Carga masiva por Excel (PID sección 9.2) — descarga de plantilla y
   // subida del archivo lleno, con una tabla de resultados por fila
   // (incluye la contraseña temporal de cada cuenta creada).
@@ -152,6 +158,19 @@ export default function Usuarios() {
     cargar();
   }
 
+  async function cambiarColorDireccion(direccionId: number, color: string) {
+    setErrorColor(null);
+    setGuardandoColorId(direccionId);
+    try {
+      await catalogoApi.actualizarColorDireccion(direccionId, color);
+      setDirecciones((prev) => prev.map((d) => (d.id === direccionId ? { ...d, color } : d)));
+    } catch {
+      setErrorColor('No se pudo guardar el color de la Dirección.');
+    } finally {
+      setGuardandoColorId(null);
+    }
+  }
+
   async function descargarPlantilla() {
     setDescargando(true);
     try {
@@ -234,6 +253,35 @@ export default function Usuarios() {
           >
             + Nuevo usuario
           </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-card p-6 mb-6 max-w-3xl">
+        <h2 className="font-display font-bold text-base mb-1">Colores por Dirección</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          Este color se usa para pintar Proyectos y el resumen de Inicio — cada Área hereda el
+          color de su Dirección.
+        </p>
+        {errorColor && <p className="text-danger-500 text-sm font-medium mb-3">{errorColor}</p>}
+        <div className="grid grid-cols-2 gap-3">
+          {direcciones.map((d) => (
+            <div key={d.id} className="flex items-center gap-2 border border-gray-100 rounded-lg px-3 py-2">
+              <span className="flex-1 text-sm text-gray-700 truncate" title={d.nombre}>
+                {d.nombre}
+              </span>
+              <input
+                type="color"
+                value={d.color}
+                disabled={guardandoColorId === d.id}
+                onChange={(e) => cambiarColorDireccion(d.id, e.target.value)}
+                title={`Color de ${d.nombre}`}
+                className="w-8 h-8 rounded border border-gray-200 cursor-pointer disabled:opacity-50"
+              />
+            </div>
+          ))}
+          {direcciones.length === 0 && (
+            <p className="text-sm text-gray-400">Sin Direcciones registradas.</p>
+          )}
         </div>
       </div>
 
