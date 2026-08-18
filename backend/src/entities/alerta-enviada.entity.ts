@@ -13,7 +13,11 @@ import { Usuario } from './usuario.entity';
 // la Dirección dueña del proyecto — misma tabla/idempotencia que el resto,
 // así que un Director solo recibe este aviso UNA vez por tarea aunque esa
 // tarea se bloquee, desbloquee y vuelva a bloquear varias veces después.
-export type TipoAlerta = 'asignacion' | '48h' | '24h' | 'vencida' | 'bloqueada';
+// 'programada' (mejora reportada por el usuario): recordatorio del día en
+// que una tarea está programada para iniciar (fechaInicio) — independiente
+// de si después se atrasa, funciona como un "reminder" puntual. Aplica a
+// cualquier tarea con recordarDiaProgramado=true, no solo a las recurrentes.
+export type TipoAlerta = 'asignacion' | '48h' | '24h' | 'vencida' | 'bloqueada' | 'programada';
 
 @Entity('alertas_enviadas')
 export class AlertaEnviada {

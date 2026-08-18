@@ -10,10 +10,12 @@ import { EmailService } from '../common/email.service';
 import {
   asuntoAsignacion,
   asuntoBloqueada,
+  asuntoProgramada,
   asuntoRecordatorio,
   asuntoVencida,
   htmlAsignacion,
   htmlBloqueada,
+  htmlProgramada,
   htmlRecordatorio,
   htmlVencida,
 } from './plantillas';
@@ -32,6 +34,17 @@ interface FilaTareaPorVencer {
   responsable_id: number | null;
   proyecto_nombre: string;
   dias_restantes: number;
+}
+
+// Recordatorio "día programado" (mejora reportada por el usuario): mismo
+// shape que FilaTareaPorVencer pero filtrando por fecha_inicio = hoy, sin
+// importar cuántos días falten para fecha_fin.
+interface FilaTareaProgramadaHoy {
+  id: number;
+  nombre: string;
+  fecha_fin: string;
+  responsable_id: number | null;
+  proyecto_nombre: string;
 }
 
 // Fase 2 del roadmap (PID sección 7): cuatro tipos de alerta por correo —
@@ -144,6 +157,81 @@ export class AlertasService {
     this.logger.log(
       `Revisión diaria de vencimientos: ${resultado.revisadas} tareas revisadas, ${resultado.notificaciones} notificaciones enviadas.`,
     );
+    // Recordatorio "día programado" (mejora reportada por el usuario) —
+    // corre en el mismo barrido diario, pero es independiente de
+    // revisarRecordatorios(): no depende de fecha_fin ni de si la tarea
+    // sigue abierta varios días después, solo de que hoy sea su fecha_inicio.
+    const programadas = await this.revisarRecordatoriosProgramados();
+    this.logger.log(
+      `Revisión diaria de tareas programadas para hoy: ${programadas.revisadas} tareas revisadas, ${programadas.notificaciones} notificaciones enviadas.`,
+    );
+  }
+
+  // Separado de tareaProgramadaDiaria() por el mismo motivo que
+  // revisarRecordatorios(): poder invocarlo a mano sin depender del cron.
+  // Recordatorio "día programado" (mejora reportada por el usuario, ver
+  // TareasService/README): a diferencia de 48h/24h/vencida (que giran sobre
+  // fecha_fin), este aviso es sobre fecha_inicio — el día en que la tarea
+  // está programada para arrancar, sin importar si después se atrasa. Aplica
+  // a cualquier tarea con recordar_dia_programado=true, no solo a las
+  // recurrentes.
+  async revisarRecordatoriosProgramados(): Promise<{ revisadas: number; notificaciones: number }> {
+    const tareas: FilaTareaProgramadaHoy[] = await this.tareasRepo.query(
+      `SELECT t.id, t.nombre, to_char(t.fecha_fin, 'YYYY-MM-DD') AS fecha_fin, t.responsable_id, p.nombre AS proyecto_nombre
+       FROM tareas t
+       JOIN proyectos p ON p.id = t.proyecto_id
+       WHERE t.recordar_dia_programado = true
+         AND t.fecha_inicio = CURRENT_DATE
+         AND t.estatus <> 'completada'`,
+    );
+
+    if (tareas.length === 0) return { revisadas: 0, notificaciones: 0 };
+
+    const tareaIds = tareas.map((t) => t.id);
+    const asignaciones: Array<{ tarea_id: number; usuario_id: number }> = await this.tareasRepo.query(
+      `SELECT tarea_id, usuario_id FROM tarea_usuarios WHERE tarea_id = ANY($1)`,
+      [tareaIds],
+    );
+
+    const usuarioIdsPorTarea = new Map<number, Set<number>>();
+    for (const t of tareas) {
+      const asignados = new Set<number>();
+      if (t.responsable_id) asignados.add(t.responsable_id);
+      usuarioIdsPorTarea.set(t.id, asignados);
+    }
+    for (const a of asignaciones) {
+      usuarioIdsPorTarea.get(a.tarea_id)?.add(a.usuario_id);
+    }
+
+    const todosLosUsuarioIds = [...new Set([...usuarioIdsPorTarea.values()].flatMap((s) => [...s]))];
+    const usuarios = todosLosUsuarioIds.length
+      ? await this.usuariosRepo.find({ where: { id: In(todosLosUsuarioIds) } })
+      : [];
+    const usuarioPorId = new Map(usuarios.map((u) => [u.id, u]));
+
+    let notificaciones = 0;
+    for (const t of tareas) {
+      const datosTarea: DatosTarea = {
+        id: t.id,
+        nombre: t.nombre,
+        fechaFin: t.fecha_fin,
+        proyectoNombre: t.proyecto_nombre,
+      };
+      const usuarioIds = usuarioIdsPorTarea.get(t.id) ?? new Set<number>();
+      for (const usuarioId of usuarioIds) {
+        const usuario = usuarioPorId.get(usuarioId);
+        if (!usuario || !usuario.activo) continue;
+        const enviado = await this.registrarYEnviar({
+          tareaId: t.id,
+          usuarioId,
+          tipo: 'programada',
+          destinatario: usuario.email,
+          datosTarea,
+        });
+        if (enviado) notificaciones++;
+      }
+    }
+    return { revisadas: tareas.length, notificaciones };
   }
 
   // Separado de tareaProgramadaDiaria() para poder invocarlo a mano
@@ -282,6 +370,9 @@ export class AlertasService {
     } else if (args.tipo === 'bloqueada') {
       asunto = asuntoBloqueada(args.datosTarea);
       html = htmlBloqueada(args.datosTarea);
+    } else if (args.tipo === 'programada') {
+      asunto = asuntoProgramada(args.datosTarea);
+      html = htmlProgramada(args.datosTarea);
     } else {
       asunto = asuntoRecordatorio(args.datosTarea, args.tipo);
       html = htmlRecordatorio(args.datosTarea, args.tipo);

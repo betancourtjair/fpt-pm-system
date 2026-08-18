@@ -139,10 +139,15 @@ export type Tarea = {
   // prioridad, para que cada Dirección organice por lo que necesite.
   etiquetas: string[];
   // Tareas recurrentes (cuarta ronda de mejoras) — si recurrenciaTipo no es
-  // null, al completarse esta tarea se genera sola la siguiente ocurrencia.
+  // null, al CREARSE esta tarea se calendarizan de una vez todas sus
+  // ocurrencias futuras hasta la fecha de fin del proyecto padre.
   recurrenciaTipo: 'diaria' | 'semanal' | 'mensual' | null;
   recurrenciaIntervalo: number;
   recurrenciaActiva: boolean;
+  // Recordatorio "día programado" (mejora reportada por el usuario): avisa
+  // el día que la tarea está programada para iniciar, sin importar si
+  // después se atrasa. Aplica a cualquier tarea, no solo a las recurrentes.
+  recordarDiaProgramado: boolean;
   // Métricas para reportes ejecutivos (cuarta ronda de mejoras).
   creadoEn: string;
   completadaEn: string | null;
@@ -339,7 +344,7 @@ export const catalogoApi = {
 // una mención o una automatización sí puede repetirse sobre la misma tarea).
 export type Notificacion = {
   id: string;
-  tipo: 'asignacion' | '48h' | '24h' | 'vencida' | 'bloqueada' | 'mencion' | 'automatizacion';
+  tipo: 'asignacion' | '48h' | '24h' | 'vencida' | 'bloqueada' | 'programada' | 'mencion' | 'automatizacion';
   tarea: { id: number; nombre: string } | null;
   mensaje?: string | null;
   fechaProgramada: string;

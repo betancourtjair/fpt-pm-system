@@ -56,6 +56,10 @@ type FormTarea = {
   // recurrencia; el intervalo se guarda como texto porque es un <input>.
   recurrenciaTipo: string;
   recurrenciaIntervalo: string;
+  // Recordatorio "día programado" (mejora reportada por el usuario) — avisa
+  // el día que la tarea está programada para iniciar, sin importar si
+  // después se atrasa. Aplica a cualquier tarea, no solo a las recurrentes.
+  recordarDiaProgramado: boolean;
 };
 
 const FORM_VACIO: FormTarea = {
@@ -70,6 +74,7 @@ const FORM_VACIO: FormTarea = {
   etiquetas: [],
   recurrenciaTipo: '',
   recurrenciaIntervalo: '1',
+  recordarDiaProgramado: false,
 };
 
 const RECURRENCIA_LABEL: Record<string, string> = { diaria: 'Diaria', semanal: 'Semanal', mensual: 'Mensual' };
@@ -389,6 +394,7 @@ export default function ProyectoDetalle() {
       etiquetas: t.etiquetas ?? [],
       recurrenciaTipo: t.recurrenciaTipo ?? '',
       recurrenciaIntervalo: String(t.recurrenciaIntervalo ?? 1),
+      recordarDiaProgramado: t.recordarDiaProgramado ?? false,
     });
     setModo(t.id);
     setErrorForm(null);
@@ -427,6 +433,7 @@ export default function ProyectoDetalle() {
       // que ya no aplican al editar, no solo agregar nuevas.
       dependeDeIds: form.dependeDeIds,
       recurrenciaTipo: form.recurrenciaTipo || null,
+      recordarDiaProgramado: form.recordarDiaProgramado,
     };
     if (form.presupuesto !== '') dto.presupuesto = Number(form.presupuesto);
     if (form.recurrenciaTipo) dto.recurrenciaIntervalo = Number(form.recurrenciaIntervalo || 1);
@@ -1051,10 +1058,26 @@ export default function ProyectoDetalle() {
               </div>
               {form.recurrenciaTipo && (
                 <p className="text-xs text-gray-400 mt-1">
-                  Al completarse, se crea sola la siguiente cada {form.recurrenciaIntervalo || 1}{' '}
-                  {form.recurrenciaTipo === 'diaria' ? 'día(s)' : form.recurrenciaTipo === 'semanal' ? 'semana(s)' : 'mes(es)'}.
+                  Se calendariza de una vez, cada {form.recurrenciaIntervalo || 1}{' '}
+                  {form.recurrenciaTipo === 'diaria' ? 'día(s)' : form.recurrenciaTipo === 'semanal' ? 'semana(s)' : 'mes(es)'},
+                  hasta la fecha de fin del proyecto.
                 </p>
               )}
+            </div>
+            <div className="col-span-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.recordarDiaProgramado}
+                  onChange={(e) => setForm({ ...form, recordarDiaProgramado: e.target.checked })}
+                  className="rounded border-gray-300"
+                />
+                Recordarme el día programado
+              </label>
+              <p className="text-xs text-gray-400 mt-1">
+                Avisa (correo + notificación) el día que esta tarea está programada para iniciar, sin importar si
+                después se atrasa — funciona como un recordatorio puntual, distinto de los avisos de vencimiento.
+              </p>
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -1311,6 +1334,14 @@ export default function ProyectoDetalle() {
                           title={`Se repite ${RECURRENCIA_LABEL[t.recurrenciaTipo].toLowerCase()}, cada ${t.recurrenciaIntervalo}`}
                         >
                           ↻ Recurrente
+                        </span>
+                      )}
+                      {t.recordarDiaProgramado && (
+                        <span
+                          className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 bg-primary-50 text-primary-600"
+                          title="Avisa el día que esta tarea está programada para iniciar"
+                        >
+                          🔔 Recordatorio
                         </span>
                       )}
                     </div>

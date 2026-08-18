@@ -127,3 +127,19 @@ export function htmlBloqueada(tarea: DatosTarea): string {
   const cuerpo = `<p style="font-size:14px;color:#374151;line-height:1.5;margin:0;">Esta tarea del proyecto <strong>${tarea.proyectoNombre}</strong> se marcó como <strong>bloqueada</strong>. Puede necesitar tu intervención para que el proyecto no se atrase.</p>`;
   return envoltura('Tarea bloqueada', '#E8384F', cuerpo, tarea);
 }
+
+// Recordatorio "día programado" (mejora reportada por el usuario): a
+// diferencia de asuntoRecordatorio/htmlRecordatorio (que avisan que FALTA
+// poco para la fecha límite), este avisa que la tarea está programada para
+// HOY — funciona como un recordatorio tipo reminder, sin importar si
+// después se atrasa. El cron que lo dispara (revisarRecordatoriosProgramados)
+// solo la manda cuando fecha_inicio = hoy, así que no hace falta calcular
+// ninguna fecha aquí.
+export function asuntoProgramada(tarea: DatosTarea): string {
+  return `Hoy toca: "${tarea.nombre}"`;
+}
+
+export function htmlProgramada(tarea: DatosTarea): string {
+  const cuerpo = `<p style="font-size:14px;color:#374151;line-height:1.5;margin:0;">Esta tarea del proyecto <strong>${tarea.proyectoNombre}</strong> está programada para <strong>hoy</strong>. Este es solo un recordatorio — no depende de si la tarea se atrasa después.</p>`;
+  return envoltura('Programada para hoy', '#D9C7FB', cuerpo, tarea);
+}

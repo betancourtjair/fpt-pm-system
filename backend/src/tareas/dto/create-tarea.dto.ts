@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -75,4 +76,12 @@ export class CreateTareaDto {
   @IsString({ each: true })
   @MaxLength(30, { each: true })
   etiquetas?: string[];
+
+  // Recordatorio "día programado" (mejora reportada por el usuario) — se
+  // dispara el día que la tarea está programada para iniciar, sin importar
+  // si después se atrasa. Aplica a cualquier tarea, no solo a las
+  // recurrentes.
+  @IsOptional()
+  @IsBoolean()
+  recordarDiaProgramado?: boolean;
 }

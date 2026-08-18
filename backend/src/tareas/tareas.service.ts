@@ -108,61 +108,80 @@ export class TareasService {
     this.eventos.emit('tarea.cambio', { proyectoId, tareaId, accion });
   }
 
-  // Tareas recurrentes (cuarta ronda de mejoras, ver README sección 4): al
-  // completarse una tarea con recurrencia activa, se crea sola la siguiente
-  // ocurrencia con las mismas fechas desplazadas. Nunca debe tronar el
-  // guardado de la tarea que se acaba de completar — mismo criterio que el
-  // resto de los "...SinRomper" de este servicio.
-  private async generarSiguienteOcurrenciaSinRomper(
-    tareaBase: Tarea,
-    fechaInicioBase: string,
-    fechaFinBase: string,
-  ) {
-    if (!tareaBase.recurrenciaTipo || !tareaBase.recurrenciaActiva) return;
+  // Tareas recurrentes (cuarta ronda de mejoras, ver README sección 4) —
+  // corregido a partir de un caso reportado por el usuario: antes, la
+  // siguiente ocurrencia solo se generaba hasta que la actual se marcaba
+  // "completada" (así que una tarea recurrente recién creada no se veía
+  // "calendarizada" en el Gantt/calendario, solo existía la primera fecha).
+  // Ahora, al crear una tarea con recurrencia activa, se generan de una vez
+  // TODAS las ocurrencias futuras (mensual/semanal/diaria según el tipo),
+  // desde la fecha de la tarea base hasta la fecha de fin del proyecto
+  // padre — así queda calendarizada por completo desde el día uno, sin
+  // depender de que alguien vaya completando una por una. Nunca debe tronar
+  // el guardado de la tarea base — mismo criterio que el resto de los
+  // "...SinRomper" de este servicio.
+  private async generarSerieRecurrenteSinRomper(tareaBase: Tarea, proyectoFechaFin: string) {
+    if (!tareaBase.recurrenciaTipo || tareaBase.recurrenciaActiva === false) return;
     try {
+      // Blindaje: nunca generar una serie descontrolada (ej. recurrencia
+      // diaria sobre un proyecto de varios años) — 200 ocurrencias futuras
+      // alcanzan de sobra para cualquier caso real y evitan un aluvión de
+      // filas de un solo request.
+      const TOPE_OCURRENCIAS = 200;
       const intervalo = tareaBase.recurrenciaIntervalo || 1;
-      const fechaInicioNueva = this.desplazarPorRecurrencia(
-        fechaInicioBase,
-        tareaBase.recurrenciaTipo,
-        intervalo,
-      );
-      const fechaFinNueva = this.desplazarPorRecurrencia(fechaFinBase, tareaBase.recurrenciaTipo, intervalo);
-
-      // Las dependencias NO se copian a propósito: la predecesora de esta
-      // ocurrencia ya se completó una vez, así que la siguiente arranca
-      // libre — copiarlas dejaría a la nueva tarea esperando para siempre
-      // (o esperando a una tarea que ya no representa lo mismo).
-      const nueva = this.tareas.create({
-        proyectoId: tareaBase.proyectoId,
-        nombre: tareaBase.nombre,
-        fechaInicio: fechaInicioNueva,
-        fechaFin: fechaFinNueva,
-        presupuesto: tareaBase.presupuesto,
-        responsableId: tareaBase.responsableId,
-        prioridad: tareaBase.prioridad,
-        etiquetas: tareaBase.etiquetas ?? [],
-        recurrenciaTipo: tareaBase.recurrenciaTipo,
-        recurrenciaIntervalo: intervalo,
-        recurrenciaActiva: true,
-        creadoEn: new Date(),
-      });
-      const guardada = await this.tareas.save(nueva);
 
       const asignados: { usuario_id: number }[] = await this.tareas.query(
         `SELECT usuario_id FROM tarea_usuarios WHERE tarea_id = $1`,
         [tareaBase.id],
       );
-      for (const a of asignados) {
-        await this.tareas.query(
-          `INSERT INTO tarea_usuarios (tarea_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [guardada.id, a.usuario_id],
-        );
-      }
 
-      this.emitirCambio(tareaBase.proyectoId, guardada.id, 'creada');
+      let fechaInicioActual = tareaBase.fechaInicio;
+      let fechaFinActual = tareaBase.fechaFin;
+      for (let i = 0; i < TOPE_OCURRENCIAS; i++) {
+        const fechaInicioNueva = this.desplazarPorRecurrencia(
+          fechaInicioActual,
+          tareaBase.recurrenciaTipo,
+          intervalo,
+        );
+        const fechaFinNueva = this.desplazarPorRecurrencia(fechaFinActual, tareaBase.recurrenciaTipo, intervalo);
+        // Tope real de la serie: no seguir generando ocurrencias más allá
+        // de la fecha de fin del proyecto que las contiene.
+        if (fechaInicioNueva > proyectoFechaFin) break;
+
+        // Las dependencias NO se copian a propósito: cada ocurrencia arranca
+        // libre — copiarlas dejaría a todas las ocurrencias futuras
+        // esperando a la misma tarea predecesora original.
+        const nueva = this.tareas.create({
+          proyectoId: tareaBase.proyectoId,
+          nombre: tareaBase.nombre,
+          fechaInicio: fechaInicioNueva,
+          fechaFin: fechaFinNueva,
+          presupuesto: tareaBase.presupuesto,
+          responsableId: tareaBase.responsableId,
+          prioridad: tareaBase.prioridad,
+          etiquetas: tareaBase.etiquetas ?? [],
+          recurrenciaTipo: tareaBase.recurrenciaTipo,
+          recurrenciaIntervalo: intervalo,
+          recurrenciaActiva: true,
+          recordarDiaProgramado: tareaBase.recordarDiaProgramado ?? false,
+          creadoEn: new Date(),
+        });
+        const guardada = await this.tareas.save(nueva);
+
+        for (const a of asignados) {
+          await this.tareas.query(
+            `INSERT INTO tarea_usuarios (tarea_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [guardada.id, a.usuario_id],
+          );
+        }
+
+        this.emitirCambio(tareaBase.proyectoId, guardada.id, 'creada');
+        fechaInicioActual = fechaInicioNueva;
+        fechaFinActual = fechaFinNueva;
+      }
     } catch {
       // Blindaje: una recurrencia mal configurada nunca debe impedir que la
-      // tarea actual se marque como completada.
+      // tarea base se cree con éxito.
     }
   }
 
@@ -202,6 +221,8 @@ export class TareasService {
       recurrenciaTipo: tarea.recurrenciaTipo,
       recurrenciaIntervalo: tarea.recurrenciaIntervalo,
       recurrenciaActiva: tarea.recurrenciaActiva,
+      // Recordatorio "día programado" (mejora reportada por el usuario).
+      recordarDiaProgramado: tarea.recordarDiaProgramado,
       creadoEn: tarea.creadoEn,
       completadaEn: tarea.completadaEn,
       usuariosAsignados: (tarea.usuariosAsignados ?? []).map((u) => ({
@@ -393,11 +414,19 @@ export class TareasService {
       etiquetas: dto.etiquetas ?? [],
       recurrenciaTipo: dto.recurrenciaTipo ?? null,
       recurrenciaIntervalo: dto.recurrenciaIntervalo ?? 1,
+      recordarDiaProgramado: dto.recordarDiaProgramado ?? false,
       creadoEn: new Date(),
     });
     const guardada = await this.tareas.save(tarea);
     if (dto.usuarioIds?.length) await this.asignarUsuarios(guardada.id, dto.usuarioIds);
     if (dto.dependeDeIds?.length) await this.reemplazarDependencias(guardada.id, dto.dependeDeIds);
+
+    // Tareas recurrentes (corrección reportada por el usuario): calendariza
+    // de una vez toda la serie de ocurrencias futuras, hasta la fecha de fin
+    // del proyecto padre — ver generarSerieRecurrenteSinRomper.
+    if (dto.recurrenciaTipo) {
+      await this.generarSerieRecurrenteSinRomper(guardada, proyecto.fechaFin);
+    }
 
     // Alerta "asignacion" (Fase 2): todos los que quedan asignados desde
     // el arranque (responsable + usuariosAsignados) reciben el correo.
@@ -470,6 +499,7 @@ export class TareasService {
     if (dto.recurrenciaTipo !== undefined) cambios.recurrenciaTipo = dto.recurrenciaTipo;
     if (dto.recurrenciaIntervalo !== undefined) cambios.recurrenciaIntervalo = dto.recurrenciaIntervalo;
     if (dto.recurrenciaActiva !== undefined) cambios.recurrenciaActiva = dto.recurrenciaActiva;
+    if (dto.recordarDiaProgramado !== undefined) cambios.recordarDiaProgramado = dto.recordarDiaProgramado;
     // Automatizaciones simples (ver aplicarAutomatizaciones más abajo) —
     // aquí se aplican sobre el objeto `cambios` porque este flujo hace un
     // UPDATE dirigido en vez de tarea.save() (ver comentario arriba).
@@ -506,9 +536,11 @@ export class TareasService {
     if (pasaABloqueada) {
       await this.notificarBloqueoSinRomper(id);
     }
-    if (entraACompletada) {
-      await this.generarSiguienteOcurrenciaSinRomper(tarea, fechaInicioFinal, fechaFinFinal);
-    }
+    // Nota: ya no se genera una nueva ocurrencia al completar la tarea —
+    // desde la corrección reportada por el usuario, toda la serie de
+    // ocurrencias futuras se calendariza de una vez al CREAR la tarea
+    // recurrente (ver generarSerieRecurrenteSinRomper), así que completar
+    // una ocurrencia ya no necesita generar la siguiente.
     await this.evaluarAutomatizacionesSinRomper(
       tarea.proyectoId,
       id,
@@ -556,7 +588,6 @@ export class TareasService {
     const estatusOriginal = tarea.estatus;
     const prioridadOriginal = tarea.prioridad;
     const fechaFinOriginal = tarea.fechaFin;
-    const fechaInicioOriginal = tarea.fechaInicio;
     if (dto.estatus !== undefined) tarea.estatus = dto.estatus;
     if (dto.porcentajeAvance !== undefined) tarea.porcentajeAvance = dto.porcentajeAvance;
     this.aplicarAutomatizaciones(tarea, dto);
@@ -570,9 +601,8 @@ export class TareasService {
     if (tarea.estatus === 'bloqueada' && estatusOriginal !== 'bloqueada') {
       await this.notificarBloqueoSinRomper(id);
     }
-    if (tarea.estatus === 'completada' && estatusOriginal !== 'completada') {
-      await this.generarSiguienteOcurrenciaSinRomper(tarea, fechaInicioOriginal, fechaFinOriginal);
-    }
+    // Nota: ver comentario equivalente en actualizar() — la serie completa
+    // de ocurrencias futuras ya se generó al crear la tarea recurrente.
     await this.evaluarAutomatizacionesSinRomper(
       tarea.proyectoId,
       id,

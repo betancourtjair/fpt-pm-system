@@ -283,13 +283,20 @@ Monday.com, sobre la base ya construida en las dos rondas anteriores):
    depende de A) y depender de una tarea de otro proyecto o con fechas
    inconsistentes, igual que antes. El Gantt dibuja una flecha por cada
    dependencia.
-2. Tareas recurrentes — al crear o editar una tarea, el campo "Tarea
-   recurrente" permite marcarla como diaria/semanal/mensual (con un
-   intervalo, ej. "cada 2 semanas"). Al completar una ocurrencia, el
-   sistema genera automáticamente la siguiente con las fechas recorridas
-   el periodo correspondiente; las dependencias no se copian a la nueva
-   ocurrencia (se revisan caso por caso). Se puede desactivar la
-   recurrencia en cualquier momento desde el mismo formulario.
+2. Tareas recurrentes — al crear una tarea, el campo "Tarea recurrente"
+   permite marcarla como diaria/semanal/mensual (con un intervalo, ej.
+   "cada 2 semanas"). Al guardarla, el sistema calendariza de una vez
+   TODA la serie de ocurrencias futuras (la actual y las siguientes según
+   el intervalo), hasta la fecha de finalización del proyecto que la
+   contiene — ya no espera a que se complete la ocurrencia actual para
+   generar la siguiente, así que el Gantt y "Mis tareas" muestran desde
+   el día uno todas las fechas futuras de la serie. Cada ocurrencia copia
+   responsable, asignados, prioridad, etiquetas y presupuesto de la
+   tarea original; las dependencias no se copian (se revisan caso por
+   caso). Por seguridad la serie se limita a 200 ocurrencias futuras como
+   tope. Editar la recurrencia de una tarea ya creada NO regenera la
+   serie (para evitar duplicados) — solo aplica al crearla. Se puede
+   desactivar la recurrencia en cualquier momento desde el formulario.
 3. Plantillas de checklist reutilizables — desde el panel de "Subtareas"
    de cualquier tarea, "Administrar plantillas" abre una biblioteca de
    checklists compartida en toda la organización (ej. "Abrir sucursal
@@ -308,6 +315,15 @@ Monday.com, sobre la base ya construida en las dos rondas anteriores):
    vencidas, tiempo promedio de finalización) y dos gráficas de tendencia
    mes contra mes (tareas creadas vs. completadas, automatizaciones
    activadas), con selector de periodo (últimos 3/6/12 meses).
+6. Recordarme el día programado — cualquier tarea (recurrente o no) tiene
+   ahora, en su formulario, la casilla "Recordarme el día programado":
+   si se activa, el día en que la tarea está programada para iniciar
+   (fecha de inicio) llega un correo + notificación in-app avisando que
+   "hoy toca" esa tarea, sin importar si después se atrasa — a
+   diferencia de los recordatorios de 48h/24h/vencida, que giran sobre la
+   fecha límite. Funciona como un reminder independiente del avance de
+   la tarea. En la tabla de tareas aparece un badge "🔔 Recordatorio"
+   junto al de "↻ Recurrente" cuando está activo.
 
 No incluye todavía: permisos granulares adicionales más allá de los roles
 actuales, ni hardening de seguridad más allá de lo ya implementado (JWT,

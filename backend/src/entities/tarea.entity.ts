@@ -93,6 +93,14 @@ export class Tarea {
   @Column({ name: 'completada_en', type: 'timestamptz', nullable: true })
   completadaEn: Date | null;
 
+  // Recordatorio "día programado" (mejora reportada por el usuario): se
+  // dispara el día que la tarea está programada para iniciar (fechaInicio),
+  // sin importar si después se atrasa — distinto de las alertas 48h/24h/
+  // vencida (que giran sobre fechaFin). Aplica a cualquier tarea, no solo a
+  // las recurrentes — ver AlertasService.revisarRecordatoriosProgramados.
+  @Column({ name: 'recordar_dia_programado', type: 'boolean', default: false })
+  recordarDiaProgramado: boolean;
+
   @ManyToMany(() => Usuario)
   @JoinTable({
     name: 'tarea_usuarios',

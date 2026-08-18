@@ -8,6 +8,7 @@ const ETIQUETA_TIPO: Record<Notificacion['tipo'], string> = {
   '24h': 'Vence en 24 horas',
   vencida: 'Tarea vencida',
   bloqueada: 'Tarea bloqueada',
+  programada: 'Programada para hoy',
   mencion: 'Te mencionaron',
   automatizacion: 'Automatización',
 };
