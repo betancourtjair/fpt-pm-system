@@ -348,6 +348,26 @@ Monday.com, sobre la base ya construida en las dos rondas anteriores):
    revisa al cargar si tu rol/permisos cambiaron y, si es así, recarga la
    página una sola vez con los datos frescos — ya no hace falta pedirle a
    nadie que cierre sesión manualmente.
+4. Estatus del proyecto ya se actualiza solo (bug reportado por el
+   usuario: un proyecto se quedaba como "No iniciado" en la pestaña de
+   Proyectos aunque ya tuviera tareas completadas). Ahora, cada vez que
+   una tarea del proyecto cambia de estatus (o se crea/borra una), el
+   proyecto se recalcula: "Completado" si el 100% de sus tareas están
+   completadas, "No iniciado" si ninguna ha arrancado, "En progreso" en
+   cualquier otro caso — reabrir una tarea ya completada regresa el
+   proyecto a "En progreso" solo, sin que nadie tenga que acordarse de
+   corregirlo a mano. Respeta un "Bloqueado" puesto manualmente: nunca lo
+   pisa, es la única forma de "congelar" el estatus del proyecto.
+5. Captura de avance como texto, no con flechas (mejora reportada por el
+   usuario) — el campo de "% avance" al editar una tarea ya no es un
+   spinner numérico (que solo avanza de 0 a 100 a un clic por unidad):
+   ahora se teclea el número directamente, como cualquier campo de texto.
+6. Tope real de 100% en el avance — además de que el backend ya lo
+   rechazaba (pero el error se perdía en silencio, dando la impresión de
+   que sí se había guardado un valor mayor a 100), el campo ahora recorta
+   cualquier valor tecleado a 100 al instante y, si de todos modos el
+   guardado llega a fallar por cualquier otro motivo, se muestra el
+   mensaje de error en pantalla en vez de fallar callado.
 
 No incluye todavía: permisos granulares adicionales más allá de los roles
 actuales, ni hardening de seguridad más allá de lo ya implementado (JWT,

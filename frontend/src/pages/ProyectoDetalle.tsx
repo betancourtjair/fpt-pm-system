@@ -133,6 +133,8 @@ export default function ProyectoDetalle() {
   const [avanceEditando, setAvanceEditando] = useState<number | null>(null);
   const [avanceEstatus, setAvanceEstatus] = useState('');
   const [avancePorcentaje, setAvancePorcentaje] = useState(0);
+  const [errorAvance, setErrorAvance] = useState<string | null>(null);
+  const [guardandoAvance, setGuardandoAvance] = useState(false);
 
   // Presupuesto real vs. plan (prioridad 8) — bitácora de gastos reales,
   // visible solo para quien ya puede ver `presupuesto` (misma regla que el
@@ -493,12 +495,34 @@ export default function ProyectoDetalle() {
     setAvanceEditando(t.id);
     setAvanceEstatus(t.estatus);
     setAvancePorcentaje(t.porcentajeAvance);
+    setErrorAvance(null);
+  }
+
+  // Captura como texto, no con flechas (mejora reportada por el usuario):
+  // el input ya no es type="number" (spinner nativo), así que esto limpia
+  // cualquier cosa que no sea dígito y recorta al rango 0-100 en cada
+  // tecleo — el usuario nunca puede dejar un valor fuera de rango, no hace
+  // falta esperar a que el backend lo rechace en el guardado.
+  function actualizarAvancePorcentaje(valorCrudo: string) {
+    const soloDigitos = valorCrudo.replace(/[^0-9]/g, '');
+    const numero = soloDigitos === '' ? 0 : Math.min(100, parseInt(soloDigitos, 10));
+    setAvancePorcentaje(numero);
   }
 
   async function guardarAvance(t: Tarea) {
-    await tareasApi.actualizarAvance(t.id, { estatus: avanceEstatus, porcentajeAvance: avancePorcentaje });
-    setAvanceEditando(null);
-    cargarTodo();
+    setErrorAvance(null);
+    setGuardandoAvance(true);
+    try {
+      await tareasApi.actualizarAvance(t.id, { estatus: avanceEstatus, porcentajeAvance: avancePorcentaje });
+      setAvanceEditando(null);
+      cargarTodo();
+    } catch (err: any) {
+      // Antes este error se perdía en silencio (sin try/catch): parecía que
+      // el avance "se guardaba" cuando en realidad el backend lo rechazaba.
+      setErrorAvance(err?.response?.data?.message || 'No se pudo guardar el avance.');
+    } finally {
+      setGuardandoAvance(false);
+    }
   }
 
   const tareasParaDependencia = useMemo(
@@ -1367,38 +1391,46 @@ export default function ProyectoDetalle() {
                   </td>
                   <td className="px-5 py-3">
                     {avanceEditando === t.id ? (
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={avanceEstatus}
-                          onChange={(e) => setAvanceEstatus(e.target.value)}
-                          className="border border-gray-200 rounded-lg px-2 py-1 text-xs"
-                        >
-                          {ESTATUS_TAREA.map((s) => (
-                            <option key={s} value={s}>
-                              {ESTATUS_LABEL[s]}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={avancePorcentaje}
-                          onChange={(e) => setAvancePorcentaje(Number(e.target.value))}
-                          className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs"
-                        />
-                        <button
-                          onClick={() => guardarAvance(t)}
-                          className="text-primary-700 font-bold text-xs hover:underline"
-                        >
-                          Guardar
-                        </button>
-                        <button
-                          onClick={() => setAvanceEditando(null)}
-                          className="text-gray-400 text-xs hover:underline"
-                        >
-                          Cancelar
-                        </button>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={avanceEstatus}
+                            onChange={(e) => setAvanceEstatus(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs"
+                          >
+                            {ESTATUS_TAREA.map((s) => (
+                              <option key={s} value={s}>
+                                {ESTATUS_LABEL[s]}
+                              </option>
+                            ))}
+                          </select>
+                          {/* Captura como texto, no flechas de spinner (mejora
+                              reportada): antes era type="number", que solo
+                              deja avanzar de 0 a 100 a un clic por unidad y
+                              tampoco impedía teclear más de 100. */}
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={avancePorcentaje}
+                            onChange={(e) => actualizarAvancePorcentaje(e.target.value)}
+                            className="w-14 border border-gray-200 rounded-lg px-2 py-1 text-xs text-right"
+                          />
+                          <span className="text-xs text-gray-500">%</span>
+                          <button
+                            onClick={() => guardarAvance(t)}
+                            disabled={guardandoAvance}
+                            className="text-primary-700 font-bold text-xs hover:underline disabled:opacity-60"
+                          >
+                            {guardandoAvance ? 'Guardando…' : 'Guardar'}
+                          </button>
+                          <button
+                            onClick={() => setAvanceEditando(null)}
+                            className="text-gray-400 text-xs hover:underline"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        {errorAvance && <p className="text-xs text-red-600 mt-1">{errorAvance}</p>}
                       </div>
                     ) : (
                       <div>

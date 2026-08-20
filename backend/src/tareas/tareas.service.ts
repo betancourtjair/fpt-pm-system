@@ -436,6 +436,11 @@ export class TareasService {
     await this.notificarAsignacionSinRomper(guardada.id, asignadosIniciales);
     await this.actividad.registrar(guardada.id, user.sub, 'creacion', 'Creó la tarea.');
     this.emitirCambio(proyectoId, guardada.id, 'creada');
+    // Bug reportado por el usuario: el estatus del proyecto no reflejaba el
+    // avance real de sus tareas. Una tarea nueva siempre entra "no_iniciada",
+    // así que esto puede regresar un proyecto "completado" a "en_progreso"
+    // si se le agrega trabajo nuevo (ver recalcularEstatusSinRomper).
+    await this.proyectos.recalcularEstatusSinRomper(proyectoId);
 
     return this.obtener(guardada.id, user);
   }
@@ -571,6 +576,10 @@ export class TareasService {
       await this.notificarAsignacionSinRomper(id, nuevosAsignados);
     }
     this.emitirCambio(tarea.proyectoId, id, 'actualizada');
+    // Bug reportado por el usuario: ver recalcularEstatusSinRomper.
+    if (estatusFinal !== tarea.estatus) {
+      await this.proyectos.recalcularEstatusSinRomper(tarea.proyectoId);
+    }
 
     return this.obtener(id, user);
   }
@@ -615,6 +624,12 @@ export class TareasService {
       await this.actividad.registrar(id, user.sub, 'cambio_estatus', `Cambió el estatus de "${estatusOriginal}" a "${tarea.estatus}".`);
     }
     this.emitirCambio(tarea.proyectoId, id, 'actualizada');
+    // Bug reportado por el usuario: ver recalcularEstatusSinRomper. Este es
+    // justo el camino de autoservicio (colaborador marcando su propio
+    // avance) donde se notó el bug originalmente.
+    if (tarea.estatus !== estatusOriginal) {
+      await this.proyectos.recalcularEstatusSinRomper(tarea.proyectoId);
+    }
     return this.obtener(id, user);
   }
 
@@ -708,6 +723,10 @@ export class TareasService {
     await this.tareas.query(`DELETE FROM tarea_usuarios WHERE tarea_id = $1`, [id]);
     await this.tareas.remove(tarea);
     this.emitirCambio(tarea.proyectoId, id, 'eliminada');
+    // Bug reportado por el usuario: ver recalcularEstatusSinRomper. Borrar
+    // la última tarea pendiente puede completar el proyecto; borrar la
+    // última tarea del proyecto lo regresa a "no_iniciado".
+    await this.proyectos.recalcularEstatusSinRomper(tarea.proyectoId);
     return { ok: true };
   }
 }

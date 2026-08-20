@@ -159,6 +159,42 @@ export class ProyectosService {
     throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
   }
 
+  // Estatus automático del proyecto (bug reportado por el usuario: una
+  // tarea se marcó "completada" pero el proyecto se seguía viendo como "No
+  // iniciado" en la pestaña de Proyectos). TareasService llama esto después
+  // de crear/actualizar/borrar cualquier tarea del proyecto:
+  //   - todas las tareas "completada"  -> proyecto "completado"
+  //   - todas las tareas "no_iniciada" (o sin tareas) -> proyecto "no_iniciado"
+  //   - cualquier otra combinación     -> proyecto "en_progreso"
+  // Respeta un "bloqueado" puesto a mano (nunca lo pisa): es la única forma
+  // de que alguien "congele" el estatus del proyecto sin que este cálculo
+  // se lo revierta solo. Envuelto en try/catch — nunca debe romper la
+  // operación sobre la tarea que lo disparó.
+  async recalcularEstatusSinRomper(proyectoId: number): Promise<void> {
+    try {
+      const proyecto = await this.proyectos.findOne({ where: { id: proyectoId } });
+      if (!proyecto || proyecto.estatus === 'bloqueado') return;
+
+      const filas: { estatus: string }[] = await this.tareasRepo.query(
+        `SELECT estatus FROM tareas WHERE proyecto_id = $1`,
+        [proyectoId],
+      );
+      let nuevoEstatus: string;
+      if (filas.length === 0 || filas.every((f) => f.estatus === 'no_iniciada')) {
+        nuevoEstatus = 'no_iniciado';
+      } else if (filas.every((f) => f.estatus === 'completada')) {
+        nuevoEstatus = 'completado';
+      } else {
+        nuevoEstatus = 'en_progreso';
+      }
+      if (nuevoEstatus !== proyecto.estatus) {
+        await this.proyectos.update(proyectoId, { estatus: nuevoEstatus });
+      }
+    } catch {
+      // Blindaje: igual que las demás rutinas "...SinRomper" del sistema.
+    }
+  }
+
   // Público: TareasService lo reutiliza para no duplicar la consulta a BD
   // (el flag es mutable en cualquier momento, nunca se confía en el JWT).
   async autorizacionPresupuesto(user: JwtPayload): Promise<boolean> {
