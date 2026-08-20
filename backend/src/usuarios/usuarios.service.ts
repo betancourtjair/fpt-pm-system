@@ -31,7 +31,7 @@ const DESCRIPCION_ROL: Record<string, string> = {
   gerente_area:
     'Alcance de su Área. Gestiona proyectos y tareas donde su Área está involucrada; no gestiona presupuesto.',
   colaborador:
-    'Alcance de lo asignado. Ve y actualiza el avance únicamente de las tareas donde es responsable o colaborador.',
+    'Alcance de lo asignado. Ve y actualiza el avance únicamente de las tareas donde es responsable o colaborador. También puede crear proyectos dentro de su propia Área.',
 };
 
 // Sin caracteres ambiguos (0/O, 1/l/I) para que se puedan transcribir a
@@ -107,7 +107,11 @@ export class UsuariosService {
 
     if (esDirector(user)) {
       qb.andWhere('direccion.id = :direccionId', { direccionId: user.direccionId });
-    } else if (user.rol === 'gerente_area') {
+    } else if (user.rol === 'gerente_area' || user.rol === 'colaborador') {
+      // colaborador (mejora reportada por el usuario): mismo candado que
+      // gerente_area — solo ve a quienes comparten su Área, para poder
+      // elegir un Responsable al crear un proyecto sin exponerle el
+      // directorio completo de la empresa.
       qb.andWhere('area.id = :areaId', { areaId: user.areaId });
     }
 

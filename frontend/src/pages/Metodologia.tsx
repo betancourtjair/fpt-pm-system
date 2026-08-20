@@ -72,7 +72,8 @@ export default function Metodologia() {
         <p>
           Con lo definido en la junta, entra a la pestaña <strong>Proyectos</strong> y da clic en{' '}
           <strong>+ Nuevo proyecto</strong>. Vas a capturar: nombre, fecha de inicio, fecha de fin,
-          presupuesto, responsable y las Áreas involucradas.
+          presupuesto (opcional — no todo proyecto lo lleva desde el arranque), responsable y las
+          Áreas involucradas.
         </p>
         <p>
           Las Áreas involucradas son la pieza más importante de este paso: definen quién puede ver
@@ -81,9 +82,8 @@ export default function Metodologia() {
           un Área, las personas de esa Área simplemente no van a ver el proyecto en su pantalla.
         </p>
         <p className="text-xs text-gray-500 italic">
-          Quién puede crear proyectos: admin (cualquiera), director (dentro de su Dirección) y
-          gerente_area (dentro de su Área). Un colaborador no crea proyectos, pero sí puede quedar
-          asignado a sus tareas.
+          Quién puede crear proyectos: admin (cualquiera), director (dentro de su Dirección),
+          gerente_area (dentro de su Área) y colaborador (también dentro de su propia Área).
         </p>
       </Paso>
 
@@ -183,7 +183,7 @@ export default function Metodologia() {
             <p className="font-bold text-accent-500">colaborador</p>
             <p className="text-primary-200">
               Ve y actualiza el avance únicamente de las tareas donde es responsable o está
-              asignado como colaborador.
+              asignado como colaborador. También puede crear proyectos dentro de su propia Área.
             </p>
           </div>
         </div>

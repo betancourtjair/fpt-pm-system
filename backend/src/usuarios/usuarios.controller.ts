@@ -34,7 +34,11 @@ import { AutorizarPresupuestoDto } from './dto/autorizar-presupuesto.dto';
 export class UsuariosController {
   constructor(private readonly usuarios: UsuariosService) {}
 
-  @Roles('admin', 'director', 'gerente_area')
+  // "colaborador" se agregó aquí (mejora reportada por el usuario: ya puede
+  // crear proyectos y necesita elegir un Responsable) — el propio
+  // UsuariosService.listar() lo acota a su misma Área, igual que
+  // gerente_area, así que no gana visibilidad sobre el directorio completo.
+  @Roles('admin', 'director', 'gerente_area', 'colaborador')
   @Get()
   listar(@CurrentUser() user: JwtPayload) {
     return this.usuarios.listar(user);

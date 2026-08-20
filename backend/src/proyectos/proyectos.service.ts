@@ -18,6 +18,7 @@ import { CreateGastoDto } from './dto/create-gasto.dto';
 import { ClonarProyectoDto } from './dto/clonar-proyecto.dto';
 import {
   esAdmin,
+  esColaborador,
   esDirector,
   esGerenteArea,
   puedeGestionarProyectos,
@@ -112,11 +113,18 @@ export class ProyectosService {
       return rows.map((r) => r.proyecto_id);
     }
 
-    // colaborador
+    // colaborador — ve los proyectos donde tiene una tarea asignada/es
+    // responsable, Y ADEMÁS los que él mismo creó (mejora reportada por el
+    // usuario: un colaborador ya puede crear proyectos; sin este UNION, el
+    // proyecto recién creado quedaría fuera de su propio alcance hasta que
+    // tuviera alguna tarea asignada dentro, y crear() volvería a fallar al
+    // intentar releerlo con obtener()).
     const rows: { proyecto_id: number }[] = await this.proyectos.query(
       `SELECT DISTINCT t.proyecto_id FROM tareas t
        LEFT JOIN tarea_usuarios tu ON tu.tarea_id = t.id
-       WHERE tu.usuario_id = $1 OR t.responsable_id = $1`,
+       WHERE tu.usuario_id = $1 OR t.responsable_id = $1
+       UNION
+       SELECT id AS proyecto_id FROM proyectos WHERE creado_por = $1`,
       [user.sub],
     );
     return rows.map((r) => r.proyecto_id);
@@ -145,6 +153,9 @@ export class ProyectosService {
     if (esAdmin(user)) return;
     if (esDirector(user) && proyecto.areas.some((a) => a.direccionId === user.direccionId)) return;
     if (esGerenteArea(user) && proyecto.areas.some((a) => a.id === user.areaId)) return;
+    // Un colaborador con manage_projects solo administra dentro de su
+    // propia Área — mismo candado que gerente_area, ver validarAreasEnAlcance.
+    if (esColaborador(user) && proyecto.areas.some((a) => a.id === user.areaId)) return;
     throw new ForbiddenException('Este proyecto está fuera de tu alcance.');
   }
 
@@ -185,7 +196,9 @@ export class ProyectosService {
     // gastoTotal viaja con la misma regla de visibilidad que presupuesto —
     // es información financiera del proyecto, tiene el mismo candado.
     if (puedeVerPresupuesto(user, autorizado)) {
-      base.presupuesto = Number(proyecto.presupuesto);
+      // Presupuesto opcional: si no se capturó, viaja como null en vez de
+      // 0 — el frontend distingue "sin presupuesto asignado" de "$0".
+      base.presupuesto = proyecto.presupuesto !== null ? Number(proyecto.presupuesto) : null;
       base.gastoTotal = gastosPorProyecto.get(proyecto.id) ?? 0;
     }
     return base;
@@ -313,7 +326,7 @@ export class ProyectosService {
       if (fuera) throw new ForbiddenException('Solo puedes asignar áreas de tu propia Dirección.');
       return;
     }
-    if (esGerenteArea(user)) {
+    if (esGerenteArea(user) || esColaborador(user)) {
       const soloSuArea = areaIds.length === 1 && areaIds[0] === user.areaId;
       if (!soloSuArea) throw new ForbiddenException('Solo puedes asignar tu propia Área.');
       return;
@@ -344,7 +357,7 @@ export class ProyectosService {
       nombre: dto.nombre,
       fechaInicio: dto.fechaInicio,
       fechaFin: dto.fechaFin,
-      presupuesto: String(dto.presupuesto),
+      presupuesto: dto.presupuesto !== undefined ? String(dto.presupuesto) : null,
       estatus: dto.estatus ?? 'no_iniciado',
       responsableId: dto.responsableId,
       creadoPor: user.sub,

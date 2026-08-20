@@ -678,10 +678,15 @@ export default function ProyectoDetalle() {
       {'presupuesto' in proyecto ? (
         <div className="bg-white rounded-2xl shadow-card p-5 mb-6">
           {(() => {
-            const plan = Number(proyecto.presupuesto);
+            // Presupuesto opcional (mejora reportada por el usuario): si el
+            // proyecto no tiene uno capturado, no hay nada contra qué
+            // comparar el gasto — se muestra el gasto real solo, sin barra
+            // de avance ni aviso de "excedido".
+            const sinPresupuesto = proyecto.presupuesto == null;
+            const plan = Number(proyecto.presupuesto ?? 0);
             const real = Number(proyecto.gastoTotal ?? 0);
             const porcentaje = plan > 0 ? Math.min(100, Math.round((real / plan) * 100)) : 0;
-            const excedido = real > plan;
+            const excedido = !sinPresupuesto && real > plan;
             return (
               <>
                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
@@ -701,19 +706,23 @@ export default function ProyectoDetalle() {
                   <span className="font-semibold text-gray-700">
                     Gastado: ${real.toLocaleString('es-MX')}
                   </span>
-                  <span className="text-gray-400">de ${plan.toLocaleString('es-MX')} planeado</span>
+                  <span className="text-gray-400">
+                    {sinPresupuesto ? 'Sin presupuesto asignado' : `de $${plan.toLocaleString('es-MX')} planeado`}
+                  </span>
                   {excedido && (
                     <span className="text-xs font-bold uppercase text-danger-500 bg-danger-500/10 px-2 py-0.5 rounded-full">
                       Presupuesto excedido
                     </span>
                   )}
                 </div>
-                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-2.5 rounded-full ${excedido ? 'bg-danger-500' : 'bg-accent-500'}`}
-                    style={{ width: `${porcentaje}%` }}
-                  />
-                </div>
+                {!sinPresupuesto && (
+                  <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-2.5 rounded-full ${excedido ? 'bg-danger-500' : 'bg-accent-500'}`}
+                      style={{ width: `${porcentaje}%` }}
+                    />
+                  </div>
+                )}
 
                 {mostrarFormGasto && (
                   <form onSubmit={agregarGasto} className="grid grid-cols-3 gap-3 mt-4 items-end">

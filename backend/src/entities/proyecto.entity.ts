@@ -25,8 +25,12 @@ export class Proyecto {
   @Column({ name: 'fecha_fin', type: 'date' })
   fechaFin: string;
 
-  @Column({ type: 'numeric', precision: 14, scale: 2 })
-  presupuesto: string;
+  // Opcional (mejora reportada por el usuario): no todo proyecto lleva un
+  // presupuesto definido desde el arranque — cuando no se captura, queda
+  // NULL y el frontend lo trata como "sin presupuesto asignado" en vez de
+  // mostrar $0 (ver ProyectosService.serializar).
+  @Column({ type: 'numeric', precision: 14, scale: 2, nullable: true })
+  presupuesto: string | null;
 
   @Column({ type: 'varchar', length: 30, default: 'no_iniciado' })
   estatus: string;

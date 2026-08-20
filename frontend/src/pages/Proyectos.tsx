@@ -153,8 +153,10 @@ export default function Proyectos() {
   const hayFiltrosActivos = Boolean(busqueda || filtroDireccionId || filtroEstatus);
 
   // Áreas que este usuario puede seleccionar al crear un proyecto: admin
-  // ve todas, director solo las de su Dirección, gerente_area solo la suya
-  // (el backend re-valida esto de todas formas — ver validarAreasEnAlcance).
+  // ve todas, director solo las de su Dirección, gerente_area y colaborador
+  // (mejora reportada por el usuario: un colaborador ya puede crear
+  // proyectos) solo la suya (el backend re-valida esto de todas formas —
+  // ver validarAreasEnAlcance).
   const areasDisponibles = useMemo(() => {
     const todas = direcciones.flatMap((d) => d.areas.map((a) => ({ ...a, direccionNombre: d.nombre })));
     if (usuario?.rol === 'admin') return todas;
@@ -162,20 +164,23 @@ export default function Proyectos() {
       const dir = direcciones.find((d) => d.id === usuario.direccionId);
       return dir ? dir.areas.map((a) => ({ ...a, direccionNombre: dir.nombre })) : [];
     }
-    if (usuario?.rol === 'gerente_area') {
+    if (usuario?.rol === 'gerente_area' || usuario?.rol === 'colaborador') {
       return todas.filter((a) => a.id === usuario.areaId);
     }
     return [];
   }, [direcciones, usuario]);
 
+  const areaUnicaFija = usuario?.rol === 'gerente_area' || usuario?.rol === 'colaborador';
+
   useEffect(() => {
-    if (usuario?.rol === 'gerente_area' && areasDisponibles.length === 1) {
+    if (areaUnicaFija && areasDisponibles.length === 1) {
       setAreaIds([areasDisponibles[0].id]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areasDisponibles]);
 
   function toggleArea(id: number) {
-    if (usuario?.rol === 'gerente_area') return; // única área, fija
+    if (areaUnicaFija) return; // única área, fija
     setAreaIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
@@ -192,7 +197,9 @@ export default function Proyectos() {
         nombre,
         fechaInicio,
         fechaFin,
-        presupuesto: Number(presupuesto),
+        // Opcional (mejora reportada por el usuario): si se deja vacío, no
+        // se manda el campo — el backend lo guarda como "sin presupuesto".
+        ...(presupuesto !== '' ? { presupuesto: Number(presupuesto) } : {}),
         responsableId: Number(responsableId),
         areaIds,
       });
@@ -202,7 +209,7 @@ export default function Proyectos() {
       setFechaFin('');
       setPresupuesto('');
       setResponsableId('');
-      setAreaIds(usuario?.rol === 'gerente_area' ? areaIds : []);
+      setAreaIds(areaUnicaFija ? areaIds : []);
       cargar();
     } catch (err: any) {
       setErrorForm(err?.response?.data?.message || 'No se pudo crear el proyecto.');
@@ -268,12 +275,14 @@ export default function Proyectos() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Presupuesto (MXN)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Presupuesto (MXN) <span className="text-gray-400 font-normal">— opcional</span>
+              </label>
               <input
                 type="number"
                 min={0}
                 step="0.01"
-                required
+                placeholder="Sin presupuesto asignado"
                 value={presupuesto}
                 onChange={(e) => setPresupuesto(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2"
@@ -475,7 +484,7 @@ export default function Proyectos() {
                     </td>
                     {'presupuesto' in p && (
                       <td className="px-5 py-3 text-gray-700">
-                        ${Number(p.presupuesto).toLocaleString('es-MX')}
+                        {p.presupuesto != null ? `$${Number(p.presupuesto).toLocaleString('es-MX')}` : '—'}
                       </td>
                     )}
                   </tr>

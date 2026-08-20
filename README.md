@@ -325,6 +325,30 @@ Monday.com, sobre la base ya construida en las dos rondas anteriores):
    la tarea. En la tabla de tareas aparece un badge "🔔 Recordatorio"
    junto al de "↻ Recurrente" cuando está activo.
 
+**Quinta ronda de mejoras:**
+
+1. Presupuesto de proyecto opcional — al crear un proyecto, el campo
+   "Presupuesto (MXN)" ya no es obligatorio. Si se deja vacío, el proyecto
+   queda sin presupuesto asignado: en la tabla de Proyectos se muestra "—"
+   en vez de "$0", y en el detalle del proyecto la tarjeta de "Presupuesto
+   vs. gasto real" muestra "Sin presupuesto asignado" (sin barra de avance
+   ni aviso de excedido, ya que no hay plan contra el cual comparar).
+2. Un colaborador ya puede crear proyectos — antes solo admin, director y
+   gerente_area podían. Un colaborador queda acotado a su propia Área
+   (igual que gerente_area): solo puede marcarla a ella como Área
+   involucrada, y el selector de "Responsable" solo le muestra a otras
+   personas de esa misma Área. Ve y administra (registrar gastos, ver el
+   equipo) los proyectos que crea igual que cualquier otro rol que
+   administra proyectos.
+3. Un rol/permiso cambiado desde Admin ya se refleja solo — antes, si un
+   admin le cambiaba el rol a alguien, esa persona tenía que cerrar sesión
+   y volver a entrar para que la interfaz lo reflejara (el backend ya
+   aplicaba el cambio de inmediato en cada petición; solo la pantalla se
+   quedaba con el rol viejo, cacheado desde el login). Ahora cada pantalla
+   revisa al cargar si tu rol/permisos cambiaron y, si es así, recarga la
+   página una sola vez con los datos frescos — ya no hace falta pedirle a
+   nadie que cierre sesión manualmente.
+
 No incluye todavía: permisos granulares adicionales más allá de los roles
 actuales, ni hardening de seguridad más allá de lo ya implementado (JWT,
 RBAC, cambio de contraseña obligatorio, límite de peticiones por IP). El

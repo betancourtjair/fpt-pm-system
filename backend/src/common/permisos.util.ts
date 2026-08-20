@@ -32,3 +32,12 @@ export function esDirector(user: JwtPayload): boolean {
 export function esGerenteArea(user: JwtPayload): boolean {
   return user.rol === 'gerente_area';
 }
+
+// Mejora reportada por el usuario: un colaborador ahora también puede crear
+// proyectos (antes solo admin/director/gerente_area) — el permiso real vive
+// en roles.permisos.manage_projects (ver seed/migración 019), este helper
+// solo identifica el rol para acotar su alcance a su propia Área, igual que
+// gerente_area (ver ProyectosService.validarAreasEnAlcance/verificarPuedeGestionar).
+export function esColaborador(user: JwtPayload): boolean {
+  return user.rol === 'colaborador';
+}

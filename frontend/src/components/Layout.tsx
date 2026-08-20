@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { clearSession, getUsuario, msRestantesDeSesion } from '../lib/api';
+import { clearSession, getUsuario, msRestantesDeSesion, refrescarPerfilSiCambio } from '../lib/api';
 import { cerrarSocket } from '../lib/socket';
 import NotificacionesBell from './NotificacionesBell';
 import BusquedaGlobal from './BusquedaGlobal';
@@ -46,6 +46,16 @@ export default function Layout({ activo, children }: { activo: ItemActivo; child
     const temporizador = setTimeout(logout, restante);
     return () => clearTimeout(temporizador);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ver comentario de refrescarPerfilSiCambio en lib/api.ts: si un admin te
+  // cambió el rol/permisos, esto lo detecta al entrar a cualquier pantalla
+  // y recarga una sola vez con los datos frescos — ya no hace falta cerrar
+  // sesión manualmente para que el cambio se vea.
+  useEffect(() => {
+    refrescarPerfilSiCambio().then((cambio) => {
+      if (cambio) window.location.reload();
+    });
   }, []);
 
   const itemClase = (clave: ItemActivo) =>

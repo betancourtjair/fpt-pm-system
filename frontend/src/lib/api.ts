@@ -55,6 +55,36 @@ export function getUsuario() {
   return raw ? JSON.parse(raw) : null;
 }
 
+// Mejora reportada por el usuario: antes, si un admin cambiaba el rol o los
+// permisos de alguien, esa persona seguía viendo la interfaz de su rol
+// viejo hasta cerrar sesión manualmente — el backend ya revalida rol/
+// permisos contra la base en cada request (ver JwtStrategy.validate), pero
+// el frontend solo lee la "foto" que se guardó en localStorage al momento
+// del login. Layout llama a esta función al montar cada pantalla protegida;
+// si /auth/me devuelve un rol o permisos distintos a los guardados, se
+// actualiza el caché y se avisa (return true) para que Layout recargue la
+// página una sola vez — así el cambio se refleja solo, sin esperar a que
+// la sesión expire (hasta 3 horas) ni pedirle a la persona que salga y
+// vuelva a entrar.
+export async function refrescarPerfilSiCambio(): Promise<boolean> {
+  const actual = getUsuario();
+  if (!actual) return false;
+  try {
+    const { data } = await api.get('/auth/me');
+    const cambio =
+      actual.rol !== data.rol || JSON.stringify(actual.permisos) !== JSON.stringify(data.permisos);
+    if (cambio) {
+      localStorage.setItem('fpt_usuario', JSON.stringify(data));
+      return true;
+    }
+  } catch {
+    // Silencioso a propósito: si falla (red, token por expirar, etc.) se
+    // sigue con el valor en caché; el interceptor de 401 ya maneja el caso
+    // de sesión inválida.
+  }
+  return false;
+}
+
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -98,7 +128,10 @@ export type Proyecto = {
   fechaInicio: string;
   fechaFin: string;
   estatus: string;
-  presupuesto?: number;
+  // Opcional (mejora reportada por el usuario): null cuando el proyecto no
+  // tiene presupuesto capturado; el campo entero se omite (undefined) si el
+  // rol del usuario no tiene autorizado verlo (ver puedeVerPresupuesto).
+  presupuesto?: number | null;
   // Solo viaja junto con `presupuesto` (misma regla de visibilidad) — suma
   // de gastos_proyecto, ver ProyectosService.mapaGastosPorProyecto.
   gastoTotal?: number;

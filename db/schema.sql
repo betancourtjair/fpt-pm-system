@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS proyectos (
   nombre VARCHAR(200) NOT NULL,
   fecha_inicio DATE NOT NULL,
   fecha_fin DATE NOT NULL,
-  presupuesto NUMERIC(14,2) NOT NULL,
+  presupuesto NUMERIC(14,2), -- opcional: no todo proyecto lleva uno definido
   estatus VARCHAR(30) DEFAULT 'no_iniciado',
   responsable_id INT REFERENCES usuarios(id),
   creado_por INT REFERENCES usuarios(id)

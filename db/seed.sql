@@ -79,7 +79,7 @@ INSERT INTO roles (nombre, permisos) VALUES
       "manage_users": false,
       "manage_roles": false,
       "manage_catalog": false,
-      "manage_projects": false,
+      "manage_projects": true,
       "manage_tasks": true,
       "manage_budget": false,
       "view_budget_if_authorized": false

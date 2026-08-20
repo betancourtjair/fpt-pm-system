@@ -14,7 +14,9 @@ import {
 } from 'class-validator';
 
 // Campos obligatorios confirmados en el alcance del sistema: fechas,
-// responsable, presupuesto y áreas/usuarios asignados (PID sección 2.1).
+// responsable y áreas/usuarios asignados (PID sección 2.1). El presupuesto
+// es opcional (mejora reportada por el usuario): no todos los proyectos
+// llevan uno definido desde el arranque.
 export class CreateProyectoDto {
   @IsString()
   @MinLength(3)
@@ -27,10 +29,11 @@ export class CreateProyectoDto {
   @IsDateString()
   fechaFin: string;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  presupuesto: number;
+  presupuesto?: number;
 
   @Type(() => Number)
   @IsInt()
